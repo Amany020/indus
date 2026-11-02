@@ -43,6 +43,8 @@ async function apiFetch<T>(path: string, opts: FetchOptions = {}): Promise<T> {
 
   if (!(fetchOpts.body instanceof FormData)) {
     headers["Content-Type"] = "application/json";
+  } else {
+    delete headers["Content-Type"];
   }
 
   const res = await fetch(`${BASE_URL}${path}`, {
@@ -52,7 +54,10 @@ async function apiFetch<T>(path: string, opts: FetchOptions = {}): Promise<T> {
 
   if (!res.ok) {
     const text = await res.text().catch(() => "Unknown error");
-    throw new Error(`API ${res.status}: ${text}`);
+    const err = new Error(`API ${res.status}: ${text}`);
+    (err as any).status = res.status;
+    (err as any).responseBody = text;
+    throw err;
   }
 
   return res.json();
@@ -264,6 +269,96 @@ export interface SopProposal {
   updated_at: string;
 }
 
+export interface SendImageQueryArgs {
+  image: File | Blob;
+  queryText?: string;
+  machineId?: string;
+  signal?: AbortSignal;
+  query_text?: string;
+  machine_id?: string;
+  detected_language?: string;
+  session_id?: string;
+}
+
+export async function sendImageQuery(
+  args: SendImageQueryArgs
+): Promise<QueryResponse> {
+  const form = new FormData();
+  if (args.image instanceof File) {
+    form.append("image", args.image);
+  } else {
+    form.append("image", args.image, "capture.jpg");
+  }
+
+  const queryText = args.queryText ?? args.query_text;
+  if (queryText && queryText.trim() !== "") {
+    form.append("query_text", queryText);
+  }
+  const machineId = args.machineId ?? args.machine_id;
+  if (machineId && machineId.trim() !== "") {
+    form.append("machine_id", machineId);
+  }
+  if (args.detected_language) {
+    form.append("detected_language", args.detected_language);
+  }
+  if (args.session_id) {
+    form.append("session_id", args.session_id);
+  }
+
+  try {
+    return await apiFetch<QueryResponse>("/query/image", {
+      method: "POST",
+      body: form,
+      signal: args.signal,
+    });
+  } catch (err: any) {
+    const status =
+      err?.status ||
+      (err?.message?.includes("413")
+        ? 413
+        : err?.message?.includes("415")
+        ? 415
+        : err?.message?.includes("422")
+        ? 422
+        : 0);
+    const msg = err?.message || "";
+
+    if (status === 413 || msg.includes("413") || msg.toLowerCase().includes("too large")) {
+      throw new Error("Image too large, max 10 MB");
+    }
+    if (status === 415 || msg.includes("415") || msg.toLowerCase().includes("unsupported")) {
+      throw new Error("Use a JPEG, PNG or WebP image");
+    }
+    if (status === 422 || msg.includes("422")) {
+      const text = err?.responseBody || msg;
+      try {
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          if (Array.isArray(parsed.detail) && parsed.detail.length > 0) {
+            const fields = parsed.detail
+              .map((d: any) => d.loc?.slice(-1)[0] || d.msg)
+              .filter(Boolean)
+              .join(", ");
+            if (fields) {
+              throw new Error(`Invalid request parameters: missing or invalid ${fields}`);
+            }
+          }
+          if (typeof parsed.detail === "string") {
+            throw new Error(parsed.detail);
+          }
+        }
+      } catch (parseErr: any) {
+        if (parseErr.message?.startsWith("Invalid request parameters") || parseErr.message === text) {
+          throw parseErr;
+        }
+      }
+      throw new Error("Invalid request: unprocessable image or query data");
+    }
+    throw err;
+  }
+}
+
 // ─── API Methods ────────────────────────────────────────────────────────
 
 export const api = {
@@ -412,28 +507,7 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
-  sendImageQuery: (args: {
-    machine_id: string;
-    query_text: string;
-    image: Blob;
-    detected_language?: string;
-    session_id?: string;
-  }) => {
-    const form = new FormData();
-    form.append("machine_id", args.machine_id);
-    form.append("query_text", args.query_text);
-    form.append("image", args.image, "capture.jpg");
-    if (args.detected_language) {
-      form.append("detected_language", args.detected_language);
-    }
-    if (args.session_id) {
-      form.append("session_id", args.session_id);
-    }
-    return apiFetch<QueryResponse>("/query/image", {
-      method: "POST",
-      body: form,
-    });
-  },
+  sendImageQuery: (args: SendImageQueryArgs) => sendImageQuery(args),
 
   getQueryHistory: (sessionId: string, machineId?: string) =>
     apiFetch<any[]>(
