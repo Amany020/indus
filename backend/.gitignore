@@ -1,0 +1,33 @@
+# Environment & Secrets
+.env
+.env*.local
+.env.*
+!.env.example
+*.pem
+
+# Python Virtual Environments
+.venv/
+venv/
+env/
+ENV/
+*/.venv/
+*/venv/
+
+# Python Cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# Logs & temp
+*.log
+*.tmp
+temp/
+tmp/
+
