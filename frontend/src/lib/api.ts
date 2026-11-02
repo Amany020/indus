@@ -70,6 +70,7 @@ export interface Machine {
   name: string;
   workcell: string;
   model_number?: string;
+  qr_code_value?: string | null;
 }
 
 export interface StepItem {
@@ -359,6 +360,60 @@ export async function sendImageQuery(
   }
 }
 
+export class QrResolveError extends Error {
+  status: number;
+  code: "not_found" | "not_enabled" | "invalid_input" | "server_error";
+
+  constructor(
+    message: string,
+    status: number,
+    code: "not_found" | "not_enabled" | "invalid_input" | "server_error"
+  ) {
+    super(message);
+    this.name = "QrResolveError";
+    this.status = status;
+    this.code = code;
+  }
+}
+
+export async function resolveMachineByQr(code: string): Promise<Machine> {
+  const cleanCode = (code || "").trim();
+  if (!cleanCode) {
+    throw new QrResolveError("QR code value is required", 400, "invalid_input");
+  }
+  try {
+    return await apiFetch<Machine>("/machines/resolve-qr", {
+      method: "POST",
+      body: JSON.stringify({ qr_value: cleanCode }),
+    });
+  } catch (err: any) {
+    const status =
+      err?.status ||
+      (err?.message?.includes("404")
+        ? 404
+        : err?.message?.includes("501")
+        ? 501
+        : 0);
+
+    if (status === 404) {
+      throw new QrResolveError(
+        "QR not recognised for your factory",
+        404,
+        "not_found"
+      );
+    }
+    if (status === 501) {
+      throw new QrResolveError(
+        "QR scanning is not enabled",
+        501,
+        "not_enabled"
+      );
+    }
+    const msg = err?.message || "Failed to resolve machine QR code";
+    throw new QrResolveError(msg, status || 500, "server_error");
+  }
+}
+
 // ─── API Methods ────────────────────────────────────────────────────────
 
 export const api = {
@@ -491,6 +546,8 @@ export const api = {
 
   hasApprovedDocs: (id: string) =>
     apiFetch<{ has_docs: boolean }>(`/machines/${id}/has-approved-docs`),
+
+  resolveMachineByQr: (code: string) => resolveMachineByQr(code),
 
   // Query
   sendQuery: (body: {

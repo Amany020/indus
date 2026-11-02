@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useApp } from "@/lib/context";
 import CameraCaptureModal from "@/components/CameraCaptureModal";
+import QrScannerModal from "@/components/QrScannerModal";
 import {
   api,
   type Machine,
@@ -40,6 +41,7 @@ import {
   Loader2,
   Wrench,
   Lightbulb,
+  QrCode,
 } from "lucide-react";
 
 export default function WorkerPage() {
@@ -98,6 +100,7 @@ export default function WorkerPage() {
   const [escalateImagePreviewUrl, setEscalateImagePreviewUrl] = useState<string | null>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const [showCameraModal, setShowCameraModal] = useState(false);
+  const [showQrModal, setShowQrModal] = useState(false);
   const [escalateSummary, setEscalateSummary] = useState("");
   const [escalateQueryId, setEscalateQueryId] = useState<string | null>(null);
   const [escalateSubmitted, setEscalateSubmitted] = useState(false);
@@ -295,6 +298,16 @@ export default function WorkerPage() {
     if (pendingImagePreviewUrl) URL.revokeObjectURL(pendingImagePreviewUrl);
     setPendingImageBlob(null);
     setPendingImagePreviewUrl(null);
+  };
+
+  const handleQrSuccess = (resolvedMachine: Machine) => {
+    setMachines((prev) => {
+      if (!prev.some((m) => m.id === resolvedMachine.id)) {
+        return [resolvedMachine, ...prev];
+      }
+      return prev;
+    });
+    setMachine(resolvedMachine);
   };
 
   // Send question - Real backend integration with Gemini and Vector Retrieval
@@ -1315,20 +1328,31 @@ export default function WorkerPage() {
                   Online
                 </span>
               </div>
-              <button
-                type="button"
-                onClick={handleOpenTips}
-                className="text-xs text-[#4C8C5C] font-semibold hover:underline mr-3"
-              >
-                Tips
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab("machines")}
-                className="text-xs text-[#D95A2B] font-semibold hover:underline"
-              >
-                Change
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={handleOpenTips}
+                  className="text-xs text-[#4C8C5C] font-semibold hover:underline"
+                >
+                  Tips
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowQrModal(true)}
+                  aria-label="Scan machine QR code"
+                  className="text-xs text-[#D95A2B] font-semibold hover:underline flex items-center gap-1"
+                >
+                  <QrCode className="w-3.5 h-3.5" />
+                  <span>Scan</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("machines")}
+                  className="text-xs text-[#D95A2B] font-semibold hover:underline"
+                >
+                  Change
+                </button>
+              </div>
             </div>
 
             {/* Message Stream */}
@@ -1718,7 +1742,18 @@ export default function WorkerPage() {
         {/* ─── TAB 3: MACHINE SELECTOR (FLEET) ───────────────────────── */}
         {activeTab === "machines" && (
           <main className="flex-1 px-4 py-4 space-y-4">
-            <h2 className="text-base font-bold text-[#1C2B29]">Select Machine</h2>
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-bold text-[#1C2B29]">Select Machine</h2>
+              <button
+                type="button"
+                onClick={() => setShowQrModal(true)}
+                aria-label="Scan machine QR code"
+                className="min-h-[48px] px-3.5 py-2 rounded-xl bg-white border border-[#E5E0D8] hover:border-[#D95A2B] text-xs font-bold text-[#1C2B29] transition shadow-xs flex items-center gap-2"
+              >
+                <QrCode className="w-4 h-4 text-[#D95A2B]" />
+                <span>Scan</span>
+              </button>
+            </div>
 
             {/* Search Input */}
             <div className="relative">
@@ -2136,9 +2171,20 @@ export default function WorkerPage() {
                     </div>
 
                     <div>
-                      <label className="text-[11px] font-bold text-[#5C6460] block mb-1">
-                        Select Machine
-                      </label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-[11px] font-bold text-[#5C6460]">
+                          Select Machine
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setShowQrModal(true)}
+                          aria-label="Scan machine QR code"
+                          className="min-h-[48px] px-2 text-xs text-[#D95A2B] font-semibold hover:underline flex items-center gap-1"
+                        >
+                          <QrCode className="w-3.5 h-3.5" />
+                          <span>Scan</span>
+                        </button>
+                      </div>
                       <select
                         value={machine?.id || (machines[0]?.id ?? "")}
                         onChange={(e) => {
@@ -2227,6 +2273,12 @@ export default function WorkerPage() {
           isOpen={showEscalateCameraModal}
           onClose={() => setShowEscalateCameraModal(false)}
           onCapture={handleEscalateCameraCapture}
+        />
+
+        <QrScannerModal
+          isOpen={showQrModal}
+          onClose={() => setShowQrModal(false)}
+          onSuccess={handleQrSuccess}
         />
 
         {/* ─── MODAL 3: DOCUMENT SOP VIEWER ─────────────────────────── */}
