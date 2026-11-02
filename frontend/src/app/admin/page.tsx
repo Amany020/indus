@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useApp } from "@/lib/context";
 import { api, type DocumentOut, type Machine, type AuthUserData, type Branch, type AnalyticsSummary, type EscalationTicket } from "@/lib/api";
+import { roleLabel } from "@/lib/roles";
 
 function formatErrorMessage(err: unknown): string {
   if (err instanceof Error) {
@@ -13,7 +14,7 @@ function formatErrorMessage(err: unknown): string {
         const parsed = JSON.parse(err.message.slice(jsonStart));
         if (parsed.detail) return String(parsed.detail);
       }
-    } catch {}
+    } catch { }
     return err.message;
   }
   return "An unexpected error occurred";
@@ -46,19 +47,14 @@ import {
   FileSpreadsheet,
   Bell,
   ChevronDown,
-  Check,
-  Search,
   CheckCircle2,
-  XCircle,
   Download,
   AlertTriangle,
   ChevronRight,
-  TrendingUp,
   Cpu,
   Layers,
   FileText,
   UserCheck,
-  Mail,
   Plus,
   X,
   Upload,
@@ -210,10 +206,12 @@ export default function AdminPage() {
     section: string;
   }>>([]);
 
-  // Genuine reviewers list from DB
+  // Genuine reviewers/team list from DB
   const [reviewers, setReviewers] = useState<Array<{
+    id?: string;
     name: string;
     email: string;
+    role: string;
     status: string;
   }>>([]);
 
@@ -229,6 +227,53 @@ export default function AdminPage() {
   // Reports / Analytics state
   const [analyticsSummary, setAnalyticsSummary] = useState<AnalyticsSummary | null>(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
+
+  // CSV report download state
+  const [downloadingAnalytics, setDownloadingAnalytics] = useState(false);
+  const [analyticsDownloadError, setAnalyticsDownloadError] = useState<string | null>(null);
+  const [downloadingEscalations, setDownloadingEscalations] = useState(false);
+  const [escalationDownloadError, setEscalationDownloadError] = useState<string | null>(null);
+
+  const handleDownloadAnalytics = async () => {
+    setDownloadingAnalytics(true);
+    setAnalyticsDownloadError(null);
+    try {
+      await api.downloadReport("analytics");
+    } catch (err: any) {
+      setAnalyticsDownloadError(err?.message || "Failed to download analytics report");
+    } finally {
+      setDownloadingAnalytics(false);
+    }
+  };
+
+  const handleDownloadEscalations = async () => {
+    setDownloadingEscalations(true);
+    setEscalationDownloadError(null);
+    try {
+      await api.downloadReport("escalations");
+    } catch (err: any) {
+      setEscalationDownloadError(err?.message || "Failed to download escalations report");
+    } finally {
+      setDownloadingEscalations(false);
+    }
+  };
+
+  // Factory summary download state (7/30/90 days, default 30)
+  const [summaryDays, setSummaryDays] = useState<7 | 30 | 90>(30);
+  const [downloadingSummary, setDownloadingSummary] = useState(false);
+  const [summaryDownloadError, setSummaryDownloadError] = useState<string | null>(null);
+
+  const handleDownloadSummary = async () => {
+    setDownloadingSummary(true);
+    setSummaryDownloadError(null);
+    try {
+      await api.downloadReport("factory-summary", summaryDays);
+    } catch (err: any) {
+      setSummaryDownloadError(err?.message || "Failed to download factory summary report");
+    } finally {
+      setDownloadingSummary(false);
+    }
+  };
 
   // Fetch real data on mount
   React.useEffect(() => {
@@ -276,8 +321,10 @@ export default function AdminPage() {
         if (usersData && usersData.length > 0) {
           setReviewers(
             usersData.map((u) => ({
+              id: u.id,
               name: u.full_name || u.email,
               email: u.email,
+              role: u.role || "worker",
               status: "Active",
             }))
           );
@@ -314,8 +361,10 @@ export default function AdminPage() {
 
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [selectedWorkerId, setSelectedWorkerId] = useState("");
+  const [targetPromoteRole, setTargetPromoteRole] = useState<"supervisor" | "expert">("supervisor");
   const [promoteSubmitting, setPromoteSubmitting] = useState(false);
   const [promoteError, setPromoteError] = useState<string | null>(null);
+  const [demoteSubmittingId, setDemoteSubmittingId] = useState<string | null>(null);
 
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [newDocFile, setNewDocFile] = useState<File | null>(null);
@@ -324,27 +373,68 @@ export default function AdminPage() {
   const [uploadSubmitting, setUploadSubmitting] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
+  // Close modals on Escape key
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (showUploadModal) { setShowUploadModal(false); return; }
+      if (showInviteModal) { setShowInviteModal(false); setPromoteError(null); setSelectedWorkerId(""); setTargetPromoteRole("supervisor"); return; }
+      if (selectedDoc) { setSelectedDoc(null); setDocActionError(null); return; }
+    };
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [showUploadModal, showInviteModal, selectedDoc]);
+
   const handlePromoteWorker = async () => {
     if (!selectedWorkerId) return;
     setPromoteSubmitting(true);
     setPromoteError(null);
     try {
-      const res = await api.promoteToReviewer(selectedWorkerId);
+      const res = await api.setUserRole(selectedWorkerId, targetPromoteRole);
       const promotedWorker = promotableWorkers.find((w) => w.id === selectedWorkerId);
-      const displayName = res.full_name || promotedWorker?.name || promotedWorker?.email || "Reviewer";
+      const displayName = res.full_name || promotedWorker?.name || promotedWorker?.email || "Team Member";
       const displayEmail = promotedWorker?.email || "";
 
       setReviewers((prev) => [
-        { name: displayName, email: displayEmail, status: "Active" },
-        ...prev,
+        {
+          id: selectedWorkerId,
+          name: displayName,
+          email: displayEmail,
+          role: res.role || targetPromoteRole,
+          status: "Active",
+        },
+        ...prev.filter((r) => r.id !== selectedWorkerId),
       ]);
       setPromotableWorkers((prev) => prev.filter((w) => w.id !== selectedWorkerId));
       setShowInviteModal(false);
       setSelectedWorkerId("");
+      setTargetPromoteRole("supervisor");
     } catch (err: any) {
-      setPromoteError(err?.message || "Failed to promote user.");
+      setPromoteError(formatErrorMessage(err) || "Failed to promote user.");
     } finally {
       setPromoteSubmitting(false);
+    }
+  };
+
+  const handleDemoteExpert = async (userId: string | undefined) => {
+    if (!userId) return;
+    setDemoteSubmittingId(userId);
+    try {
+      const res = await api.setUserRole(userId, "worker");
+      setReviewers((prev) =>
+        prev.map((r) => (r.id === userId ? { ...r, role: res.role || "worker" } : r))
+      );
+      const workerObj = reviewers.find((r) => r.id === userId);
+      if (workerObj) {
+        setPromotableWorkers((prev) => [
+          ...prev.filter((w) => w.id !== userId),
+          { id: userId, name: workerObj.name, email: workerObj.email },
+        ]);
+      }
+    } catch (err: any) {
+      alert(formatErrorMessage(err) || "Failed to return user to worker.");
+    } finally {
+      setDemoteSubmittingId(null);
     }
   };
 
@@ -406,10 +496,13 @@ export default function AdminPage() {
               <button
                 type="button"
                 className="relative p-2 text-[#5C6460] hover:text-[#1C2B29] rounded-full hover:bg-[#F0EDE6] transition"
-                onClick={() => alert("3 documents awaiting manager approval")}
+                onClick={() => setActiveNav("documents")}
+                aria-label="View documents"
               >
                 <Bell className="w-5 h-5" />
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#D95A2B] rounded-full" />
+                {documents.some((d) => d.status === "queued" || d.status === "processing" || d.status === "pending") && (
+                  <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#D95A2B] rounded-full" />
+                )}
               </button>
 
               <button
@@ -791,11 +884,10 @@ export default function AdminPage() {
                   key={f.id}
                   type="button"
                   onClick={() => setDocFilter(f.id as any)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-semibold transition ${
-                    docFilter === f.id
+                  className={`px-3 py-1.5 rounded-full text-xs font-semibold transition ${docFilter === f.id
                       ? "bg-[#1C2B29] text-white"
                       : "bg-white border border-[#E5E0D8] text-[#5C6460] hover:text-[#1C2B29]"
-                  }`}
+                    }`}
                 >
                   {f.label}
                 </button>
@@ -860,7 +952,7 @@ export default function AdminPage() {
             <div className="space-y-2.5">
               {reviewers.map((r, i) => (
                 <div
-                  key={i}
+                  key={r.id || i}
                   className="bg-white border border-[#EDE8E0] rounded-2xl p-3.5 shadow-xs flex items-center justify-between"
                 >
                   <div className="flex items-center gap-3">
@@ -877,15 +969,30 @@ export default function AdminPage() {
                     </div>
                   </div>
 
-                  <span
-                    className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                      r.status === "Active"
-                        ? "bg-green-50 text-green-700"
-                        : "bg-gray-100 text-gray-500"
-                    }`}
-                  >
-                    {r.status}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#EDE8E0] text-[#1C2B29]">
+                      {roleLabel(r.role || "worker")}
+                    </span>
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${r.status === "Active"
+                          ? "bg-[#EDE8E0] text-[#1C2B29]"
+                          : "bg-[#FAF8F5] text-[#5C6460] border border-[#E5E0D8]"
+                        }`}
+                    >
+                      {r.status}
+                    </span>
+                    {r.role === "expert" && (
+                      <button
+                        type="button"
+                        aria-label="Return to Worker"
+                        disabled={demoteSubmittingId === r.id}
+                        onClick={() => handleDemoteExpert(r.id)}
+                        className="min-h-[48px] px-3 py-1.5 rounded-xl border border-[#EDE8E0] bg-[#FAF8F5] text-[#1C2B29] text-xs font-semibold hover:bg-[#E5E0D8] transition disabled:opacity-50"
+                      >
+                        {demoteSubmittingId === r.id ? "Updating..." : "Return to Worker"}
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -906,10 +1013,94 @@ export default function AdminPage() {
             : null;
           const errorCodes = analyticsSummary?.recurring_error_codes ?? [];
           const maxErrorCount = Math.max(...errorCodes.map((c) => c.count), 1);
-          const barColors = ["bg-[#D95A2B]", "bg-amber-500", "bg-blue-500"];
+          const barColors = ["bg-[#D95A2B]", "bg-[#1C2B29]", "bg-[#5C6460]"];
           return (
             <main className="flex-1 px-4 py-4 space-y-4">
-              <h2 className="text-base font-bold text-[#1C2B29]">Operations Reports</h2>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <h2 className="text-base font-bold text-[#1C2B29]">Operations Reports</h2>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleDownloadAnalytics}
+                    disabled={downloadingAnalytics}
+                    className="min-h-[48px] px-4 py-2 bg-[#EDE8E0] hover:bg-[#E5E0D8] text-[#1C2B29] border border-[#E5E0D8] rounded-xl text-xs font-semibold transition inline-flex items-center gap-2 disabled:opacity-50"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>{downloadingAnalytics ? "Preparing..." : "Download Analytics PDF"}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDownloadEscalations}
+                    disabled={downloadingEscalations}
+                    className="min-h-[48px] px-4 py-2 bg-[#EDE8E0] hover:bg-[#E5E0D8] text-[#1C2B29] border border-[#E5E0D8] rounded-xl text-xs font-semibold transition inline-flex items-center gap-2 disabled:opacity-50"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>{downloadingEscalations ? "Preparing..." : "Download Escalations PDF"}</span>
+                  </button>
+                </div>
+              </div>
+              {analyticsDownloadError && (
+                <div className="p-3 rounded-xl text-xs font-medium bg-[#FAF8F5] border border-[#D95A2B] text-[#D95A2B]">
+                  {analyticsDownloadError}
+                </div>
+              )}
+              {escalationDownloadError && (
+                <div className="p-3 rounded-xl text-xs font-medium bg-[#FAF8F5] border border-[#D95A2B] text-[#D95A2B]">
+                  {escalationDownloadError}
+                </div>
+              )}
+
+              {/* ─── Factory Summary Production Planning Export ─── */}
+              <div className="bg-white border border-[#EDE8E0] rounded-2xl p-4 shadow-xs space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <div className="text-xs font-bold text-[#1C2B29]">Factory Summary Report</div>
+                    <div className="text-[11px] text-[#5C6460] mt-0.5">
+                      Production planning PDF: totals, per-machine breakdown, recurring questions, resolution performance, and documentation gaps.
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 self-start sm:self-auto shrink-0">
+                    <span className="text-xs font-semibold text-[#5C6460] mr-1">Period:</span>
+                    {([7, 30, 90] as const).map((d) => (
+                      <button
+                        key={d}
+                        type="button"
+                        onClick={() => setSummaryDays(d)}
+                        disabled={downloadingSummary}
+                        aria-label={`Select ${d} day period for summary`}
+                        aria-pressed={summaryDays === d}
+                        className={`min-h-[48px] px-3.5 py-1.5 rounded-xl text-xs font-bold transition disabled:opacity-50 ${
+                          summaryDays === d
+                            ? "bg-[#1C2B29] text-white"
+                            : "bg-[#FAF8F5] text-[#5C6460] border border-[#E5E0D8] hover:bg-[#EDE8E0] hover:text-[#1C2B29]"
+                        }`}
+                      >
+                        {d} Days
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-t border-[#EDE8E0]">
+                  <button
+                    type="button"
+                    onClick={handleDownloadSummary}
+                    disabled={downloadingSummary}
+                    aria-label="Download Factory Summary PDF"
+                    className="min-h-[48px] px-4 py-2 bg-[#D95A2B] hover:bg-[#C84E18] text-white rounded-xl text-xs font-semibold transition inline-flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>{downloadingSummary ? "Preparing Factory Summary PDF..." : `Download Factory Summary PDF (${summaryDays} Days)`}</span>
+                  </button>
+                  <span className="text-[11px] text-[#5C6460]">Full factory planning dataset with documentation gaps</span>
+                </div>
+
+                {summaryDownloadError && (
+                  <div className="p-3 rounded-xl text-xs font-medium bg-[#FAF8F5] border border-[#D95A2B] text-[#D95A2B]">
+                    {summaryDownloadError}
+                  </div>
+                )}
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="bg-white border border-[#EDE8E0] rounded-2xl p-3 shadow-xs">
                   <div className="text-xs text-[#5C6460]">Total Queries</div>
@@ -965,7 +1156,7 @@ export default function AdminPage() {
 
         {/* ─── MODAL: DOCUMENT APPROVAL DRAWER ──────────────────────── */}
         {selectedDoc && (
-          <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-3">
+          <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-3" onClick={(e) => { if (e.target === e.currentTarget) { setSelectedDoc(null); setDocActionError(null); } }}>
             <div className="w-full max-w-md bg-white rounded-3xl p-5 shadow-2xl border border-[#EDE8E0] space-y-4 max-h-[90vh] flex flex-col">
               <div className="flex items-center justify-between border-b border-[#EDE8E0] pb-2">
                 <div className="flex items-center gap-2">
@@ -1080,20 +1271,22 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* ─── MODAL: PROMOTE TO REVIEWER ───────────────────────────── */}
+        {/* ─── MODAL: PROMOTE WORKER ───────────────────────────────── */}
         {showInviteModal && (
-          <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4" onClick={(e) => { if (e.target === e.currentTarget) { setShowInviteModal(false); setPromoteError(null); setSelectedWorkerId(""); setTargetPromoteRole("supervisor"); } }}>
             <div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl border border-[#EDE8E0] space-y-4">
               <div className="flex items-center justify-between border-b border-[#EDE8E0] pb-2">
-                <span className="font-bold text-sm text-[#1C2B29]">Promote to Reviewer</span>
+                <span className="font-bold text-sm text-[#1C2B29]">Promote Worker</span>
                 <button
                   type="button"
+                  aria-label="Close promote modal"
                   onClick={() => {
                     setShowInviteModal(false);
                     setPromoteError(null);
                     setSelectedWorkerId("");
+                    setTargetPromoteRole("supervisor");
                   }}
-                  className="p-1 rounded-full text-[#5C6460] hover:bg-[#FAF8F5]"
+                  className="p-2 rounded-full text-[#5C6460] hover:bg-[#FAF8F5]"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -1105,23 +1298,41 @@ export default function AdminPage() {
                     No eligible workers to promote
                   </p>
                 ) : (
-                  <div>
-                    <label className="text-[11px] font-bold text-[#5C6460] block mb-1">
-                      Select Worker
-                    </label>
-                    <select
-                      value={selectedWorkerId}
-                      onChange={(e) => setSelectedWorkerId(e.target.value)}
-                      className="w-full bg-[#FAF8F5] border border-[#E5E0D8] rounded-xl p-2.5 text-xs text-[#1C2B29] focus:outline-none focus:border-[#D95A2B]"
-                    >
-                      <option value="">Select a worker...</option>
-                      {promotableWorkers.map((w) => (
-                        <option key={w.id} value={w.id}>
-                          {w.name} ({w.email})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                  <>
+                    <div>
+                      <label className="text-[11px] font-bold text-[#5C6460] block mb-1">
+                        Select Worker
+                      </label>
+                      <select
+                        aria-label="Select worker to promote"
+                        value={selectedWorkerId}
+                        onChange={(e) => setSelectedWorkerId(e.target.value)}
+                        className="w-full min-h-[48px] bg-[#FAF8F5] border border-[#E5E0D8] rounded-xl p-2.5 text-xs text-[#1C2B29] focus:outline-none focus:border-[#D95A2B]"
+                      >
+                        <option value="">Select a worker...</option>
+                        {promotableWorkers.map((w) => (
+                          <option key={w.id} value={w.id}>
+                            {w.name} ({w.email})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-bold text-[#5C6460] block mb-1">
+                        Promote To Role
+                      </label>
+                      <select
+                        aria-label="Select role to promote to"
+                        value={targetPromoteRole}
+                        onChange={(e) => setTargetPromoteRole(e.target.value as "supervisor" | "expert")}
+                        className="w-full min-h-[48px] bg-[#FAF8F5] border border-[#E5E0D8] rounded-xl p-2.5 text-xs text-[#1C2B29] focus:outline-none focus:border-[#D95A2B]"
+                      >
+                        <option value="supervisor">Reviewer</option>
+                        <option value="expert">Expert Engineer</option>
+                      </select>
+                    </div>
+                  </>
                 )}
 
                 {promoteError && (
@@ -1132,6 +1343,7 @@ export default function AdminPage() {
                     </div>
                     <button
                       type="button"
+                      aria-label="Dismiss promote error"
                       onClick={() => setPromoteError(null)}
                       className="p-1 rounded-full text-red-500 hover:bg-red-100 transition"
                     >
@@ -1143,9 +1355,10 @@ export default function AdminPage() {
                 {promotableWorkers.length > 0 && (
                   <button
                     type="button"
+                    aria-label="Promote user"
                     disabled={promoteSubmitting || !selectedWorkerId}
                     onClick={handlePromoteWorker}
-                    className="w-full py-3 rounded-2xl bg-[#D95A2B] hover:bg-[#C84E18] text-white text-xs font-bold transition shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="w-full min-h-[48px] py-3 rounded-2xl bg-[#D95A2B] hover:bg-[#C84E18] text-white text-xs font-bold transition shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {promoteSubmitting ? "Promoting..." : "Promote"}
                   </button>
@@ -1157,7 +1370,7 @@ export default function AdminPage() {
 
         {/* ─── MODAL: UPLOAD DOCUMENT ───────────────────────────────── */}
         {showUploadModal && (
-          <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4" onClick={(e) => { if (e.target === e.currentTarget) setShowUploadModal(false); }}>
             <div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl border border-[#EDE8E0] space-y-4">
               <div className="flex items-center justify-between border-b border-[#EDE8E0] pb-2">
                 <span className="font-bold text-sm text-[#1C2B29]">Upload Document</span>
@@ -1284,9 +1497,8 @@ export default function AdminPage() {
           <button
             type="button"
             onClick={() => setActiveNav("home")}
-            className={`flex flex-col items-center gap-1 text-[11px] font-semibold transition ${
-              activeNav === "home" ? "text-[#D95A2B]" : "text-[#5C6460] hover:text-[#1C2B29]"
-            }`}
+            className={`flex flex-col items-center gap-1 text-[11px] font-semibold transition ${activeNav === "home" ? "text-[#D95A2B]" : "text-[#5C6460] hover:text-[#1C2B29]"
+              }`}
           >
             <Home className="w-5 h-5" />
             <span>Home</span>
@@ -1295,9 +1507,8 @@ export default function AdminPage() {
           <button
             type="button"
             onClick={() => setActiveNav("branch")}
-            className={`flex flex-col items-center gap-1 text-[11px] font-semibold transition ${
-              activeNav === "branch" ? "text-[#D95A2B]" : "text-[#5C6460] hover:text-[#1C2B29]"
-            }`}
+            className={`flex flex-col items-center gap-1 text-[11px] font-semibold transition ${activeNav === "branch" ? "text-[#D95A2B]" : "text-[#5C6460] hover:text-[#1C2B29]"
+              }`}
           >
             <Building2 className="w-5 h-5" />
             <span>Branch</span>
@@ -1306,9 +1517,8 @@ export default function AdminPage() {
           <button
             type="button"
             onClick={() => setActiveNav("documents")}
-            className={`flex flex-col items-center gap-1 text-[11px] font-semibold transition ${
-              activeNav === "documents" ? "text-[#D95A2B]" : "text-[#5C6460] hover:text-[#1C2B29]"
-            }`}
+            className={`flex flex-col items-center gap-1 text-[11px] font-semibold transition ${activeNav === "documents" ? "text-[#D95A2B]" : "text-[#5C6460] hover:text-[#1C2B29]"
+              }`}
           >
             <FileCheck2 className="w-5 h-5" />
             <span>Docs</span>
@@ -1317,9 +1527,8 @@ export default function AdminPage() {
           <button
             type="button"
             onClick={() => setActiveNav("team")}
-            className={`flex flex-col items-center gap-1 text-[11px] font-semibold transition ${
-              activeNav === "team" ? "text-[#D95A2B]" : "text-[#5C6460] hover:text-[#1C2B29]"
-            }`}
+            className={`flex flex-col items-center gap-1 text-[11px] font-semibold transition ${activeNav === "team" ? "text-[#D95A2B]" : "text-[#5C6460] hover:text-[#1C2B29]"
+              }`}
           >
             <Users className="w-5 h-5" />
             <span>Team</span>
@@ -1328,9 +1537,8 @@ export default function AdminPage() {
           <button
             type="button"
             onClick={() => setActiveNav("reports")}
-            className={`flex flex-col items-center gap-1 text-[11px] font-semibold transition ${
-              activeNav === "reports" ? "text-[#D95A2B]" : "text-[#5C6460] hover:text-[#1C2B29]"
-            }`}
+            className={`flex flex-col items-center gap-1 text-[11px] font-semibold transition ${activeNav === "reports" ? "text-[#D95A2B]" : "text-[#5C6460] hover:text-[#1C2B29]"
+              }`}
           >
             <FileSpreadsheet className="w-5 h-5" />
             <span>Reports</span>

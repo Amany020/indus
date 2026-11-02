@@ -7,6 +7,9 @@ import CameraCaptureModal from "@/components/CameraCaptureModal";
 import QrScannerModal from "@/components/QrScannerModal";
 import {
   api,
+  isAbortError,
+  LANGUAGES,
+  type VoiceLanguageCode,
   type Machine,
   type QueryResponse,
   type TroubleshootingSession,
@@ -14,7 +17,13 @@ import {
   type TroubleshootingStep,
   type ExpertTip,
   type Tip,
+  getMyTickets,
+  getAssignedTickets,
+  type EscalationTicketListItem,
 } from "@/lib/api";
+import { isExpertRole } from "@/lib/roles";
+import TicketList from "@/components/TicketList";
+import TicketThread from "@/components/TicketThread";
 import {
   Home,
   MessageSquare,
@@ -25,7 +34,9 @@ import {
   ThumbsUp,
   ThumbsDown,
   Send,
+  Square,
   Mic,
+  Languages,
   Paperclip,
   ChevronRight,
   Search,
@@ -48,8 +59,54 @@ export default function WorkerPage() {
   const router = useRouter();
   const { machine, setMachine, logout, user, sessionId } = useApp();
 
-  // Navigation tab: 'home' | 'chat' | 'machines' | 'history'
-  const [activeTab, setActiveTab] = useState<"home" | "chat" | "machines" | "history">("home");
+  // Navigation tab: 'home' | 'chat' | 'machines' | 'history' | 'my_tickets' | 'assigned_tickets'
+  const [activeTab, setActiveTab] = useState<"home" | "chat" | "machines" | "history" | "my_tickets" | "assigned_tickets">("home");
+  const [userRole, setUserRole] = useState<string>(user?.role || "worker");
+
+  // Escalation Tickets state
+  const [myTickets, setMyTickets] = useState<EscalationTicketListItem[]>([]);
+  const [myTicketsLoading, setMyTicketsLoading] = useState(false);
+  const [myTicketsError, setMyTicketsError] = useState<string | null>(null);
+  const [selectedMyTicketId, setSelectedMyTicketId] = useState<string | null>(null);
+
+  const loadMyTickets = useCallback(async () => {
+    setMyTicketsLoading(true);
+    setMyTicketsError(null);
+    try {
+      const data = await getMyTickets();
+      setMyTickets(data || []);
+    } catch (err: any) {
+      setMyTicketsError(err?.message || "Failed to load my tickets");
+    } finally {
+      setMyTicketsLoading(false);
+    }
+  }, []);
+
+  const [assignedTickets, setAssignedTickets] = useState<EscalationTicketListItem[]>([]);
+  const [assignedTicketsLoading, setAssignedTicketsLoading] = useState(false);
+  const [assignedTicketsError, setAssignedTicketsError] = useState<string | null>(null);
+  const [selectedAssignedTicketId, setSelectedAssignedTicketId] = useState<string | null>(null);
+
+  const loadAssignedTickets = useCallback(async () => {
+    setAssignedTicketsLoading(true);
+    setAssignedTicketsError(null);
+    try {
+      const data = await getAssignedTickets();
+      setAssignedTickets(data || []);
+    } catch (err: any) {
+      setAssignedTicketsError(err?.message || "Failed to load assigned tickets");
+    } finally {
+      setAssignedTicketsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === "my_tickets") {
+      loadMyTickets();
+    } else if (activeTab === "assigned_tickets") {
+      loadAssignedTickets();
+    }
+  }, [activeTab, loadMyTickets, loadAssignedTickets]);
 
   // Machines state from genuine database
   const [machines, setMachines] = useState<Machine[]>([]);
@@ -68,6 +125,7 @@ export default function WorkerPage() {
     sender: "worker" | "ai";
     time: string;
     text: string;
+    stopped?: boolean;
     imageUrl?: string;
     steps?: string[];
     highlight?: string;
@@ -83,6 +141,7 @@ export default function WorkerPage() {
   const [isSending, setIsSending] = useState(false);
   const [replayedBanner, setReplayedBanner] = useState<string | null>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
+  const queryAbortControllerRef = useRef<AbortController | null>(null);
 
   // Modals
   const [showVoiceModal, setShowVoiceModal] = useState(false);
@@ -93,6 +152,7 @@ export default function WorkerPage() {
   const audioChunksRef = useRef<Blob[]>([]);
   const [transcript, setTranscript] = useState("");
   const [transcriptError, setTranscriptError] = useState<string | null>(null);
+  const [selectedLanguage, setSelectedLanguage] = useState<VoiceLanguageCode>("en");
   const [editedTranscript, setEditedTranscript] = useState("");
   const [showEscalate, setShowEscalate] = useState(false);
   const [showEscalateCameraModal, setShowEscalateCameraModal] = useState(false);
@@ -243,7 +303,12 @@ export default function WorkerPage() {
     setMachinesLoading(true);
 
     api.getMe()
-      .then((me) => api.getMachines(me.factory_id))
+      .then((me) => {
+        if (isMounted && me?.role) {
+          setUserRole(me.role);
+        }
+        return api.getMachines(me.factory_id);
+      })
       .then((data) => {
         if (isMounted && data) {
           setMachines(data);
@@ -294,6 +359,53 @@ export default function WorkerPage() {
     setPendingImagePreviewUrl(URL.createObjectURL(imageBlob));
   };
 
+  // Abort any in-flight query request on unmount
+  useEffect(() => {
+    return () => {
+      if (queryAbortControllerRef.current) {
+        queryAbortControllerRef.current.abort();
+        queryAbortControllerRef.current = null;
+      }
+    };
+  }, []);
+
+  // Client-side only: stops waiting; the server request continues.
+  const handleStopQuery = () => {
+    if (queryAbortControllerRef.current) {
+      queryAbortControllerRef.current.abort();
+      queryAbortControllerRef.current = null;
+    }
+    setIsSending(false);
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: `stopped-${Date.now()}`,
+        sender: "ai",
+        time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        text: "Stopped.",
+        stopped: true,
+        feedback: null,
+      },
+    ]);
+  };
+
+  // Read voice language from localStorage on client mount (SSR safe)
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("im_voice_lang");
+      if (saved === "en" || saved === "hi") {
+        setSelectedLanguage(saved);
+      }
+    } catch (_) {}
+  }, []);
+
+  const handleLanguageSelect = (lang: VoiceLanguageCode) => {
+    setSelectedLanguage(lang);
+    try {
+      localStorage.setItem("im_voice_lang", lang);
+    } catch (_) {}
+  };
+
   const handleRemovePendingImage = () => {
     if (pendingImagePreviewUrl) URL.revokeObjectURL(pendingImagePreviewUrl);
     setPendingImageBlob(null);
@@ -333,6 +445,12 @@ export default function WorkerPage() {
       return;
     }
 
+    if (queryAbortControllerRef.current) {
+      queryAbortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    queryAbortControllerRef.current = controller;
+
     if (hasPendingImage && pendingImageBlob) {
       const imageBlob = pendingImageBlob;
       const caption = textToSend.trim() || "Identify the issue shown in this image";
@@ -360,7 +478,13 @@ export default function WorkerPage() {
           query_text: caption,
           image: imageBlob,
           session_id: sessionId,
+          detected_language: selectedLanguage,
+          signal: controller.signal,
         });
+
+        if (controller.signal.aborted) {
+          return;
+        }
 
         const aiMsgId = `ai-${Date.now()}`;
         const citedEvidenceId = response.citations?.[0]?.evidence_id;
@@ -401,6 +525,9 @@ export default function WorkerPage() {
 
         loadHistory();
       } catch (err) {
+        if (isAbortError(err) || controller.signal.aborted) {
+          return;
+        }
         setMessages((prev) => [
           ...prev,
           {
@@ -412,7 +539,10 @@ export default function WorkerPage() {
           },
         ]);
       } finally {
-        setIsSending(false);
+        if (queryAbortControllerRef.current === controller) {
+          queryAbortControllerRef.current = null;
+          setIsSending(false);
+        }
       }
       return;
     }
@@ -434,14 +564,22 @@ export default function WorkerPage() {
     setIsSending(true);
 
     try {
-      const response: QueryResponse = await api.sendQuery({
-        machine_id: activeMachine.id,
-        query_text: textToSend,
-        session_id: sessionId,
-        input_mode: options?.input_mode || "text",
-        raw_transcript: options?.raw_transcript,
-        transcript_confirmed: options?.transcript_confirmed ?? (options?.input_mode === "voice" ? false : true),
-      });
+      const response: QueryResponse = await api.sendQuery(
+        {
+          machine_id: activeMachine.id,
+          query_text: textToSend,
+          session_id: sessionId,
+          input_mode: options?.input_mode || "text",
+          detected_language: selectedLanguage,
+          raw_transcript: options?.raw_transcript,
+          transcript_confirmed: options?.transcript_confirmed ?? (options?.input_mode === "voice" ? false : true),
+        },
+        controller.signal
+      );
+
+      if (controller.signal.aborted) {
+        return;
+      }
 
       const aiMsgId = `ai-${Date.now()}`;
       const citedEvidenceId = response.citations?.[0]?.evidence_id;
@@ -484,6 +622,9 @@ export default function WorkerPage() {
       // Refresh real history after successful query
       loadHistory();
     } catch (err) {
+      if (isAbortError(err) || controller.signal.aborted) {
+        return;
+      }
       setMessages((prev) => [
         ...prev,
         {
@@ -495,7 +636,10 @@ export default function WorkerPage() {
         },
       ]);
     } finally {
-      setIsSending(false);
+      if (queryAbortControllerRef.current === controller) {
+        queryAbortControllerRef.current = null;
+        setIsSending(false);
+      }
     }
   };
 
@@ -612,6 +756,21 @@ export default function WorkerPage() {
     }
   }, [showVoiceModal]);
 
+  // Close modals on Escape key
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (showVoiceModal) { closeVoiceModal(); return; }
+      if (showEscalate) { setShowEscalate(false); return; }
+      if (activeDocSource) { setActiveDocSource(null); setDocImageUrl(null); setDocViewerError(null); setDocViewerLoading(false); return; }
+      if (showProfileModal) { setShowProfileModal(false); return; }
+      if (showTroubleshoot) { setShowTroubleshoot(false); return; }
+      if (showTips) { setShowTips(false); return; }
+    };
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [showVoiceModal, showEscalate, activeDocSource, showProfileModal, showTroubleshoot, showTips, closeVoiceModal]);
+
   const startRecording = async () => {
     setTranscriptError(null);
 
@@ -672,7 +831,7 @@ export default function WorkerPage() {
 
       const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
       try {
-        const res = await api.transcribe(audioBlob);
+        const res = await api.transcribe(audioBlob, selectedLanguage);
         setTranscript(res.transcript || "");
         setEditedTranscript(res.transcript || "");
         setRecordingState("confirming");
@@ -707,6 +866,8 @@ export default function WorkerPage() {
 
   const handleSpeak = async (messageId: string, text: string, language?: string) => {
     setSpeechError(null);
+    const langToUse: VoiceLanguageCode =
+      language === "hi" || language === "en" ? language : selectedLanguage;
 
     // If already speaking this message, stop playback
     if (speakingMessageId === messageId) {
@@ -732,8 +893,48 @@ export default function WorkerPage() {
       audioPlayerRef.current = null;
     }
 
+    const fallbackToBrowserSpeech = () => {
+      if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+        setSpeechError("Voice output is not supported in this browser.");
+        setSpeakingMessageId(null);
+        return;
+      }
+
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = langToUse === "hi" ? "hi-IN" : "en-US";
+
+      const voices = window.speechSynthesis.getVoices();
+      const match = voices.find((v) =>
+        v.lang.toLowerCase().startsWith(langToUse)
+      );
+
+      if (voices.length > 0 && !match) {
+        setSpeechError(
+          langToUse === "hi"
+            ? "No Hindi voice installed on this device."
+            : "No English voice installed on this device."
+        );
+        setSpeakingMessageId(null);
+        return;
+      }
+
+      if (match) {
+        utterance.voice = match;
+      }
+
+      utterance.onend = () => {
+        setSpeakingMessageId(null);
+      };
+      utterance.onerror = () => {
+        setSpeakingMessageId(null);
+      };
+      window.speechSynthesis.speak(utterance);
+      setSpeakingMessageId(messageId);
+    };
+
     try {
-      const res = await api.textToSpeech(text, language || "en");
+      const res = await api.textToSpeech(text, langToUse);
 
       if (res.audio_url) {
         const audio = new Audio(res.audio_url);
@@ -745,35 +946,16 @@ export default function WorkerPage() {
         audio.onerror = () => {
           setSpeakingMessageId(null);
           audioPlayerRef.current = null;
-          setSpeechError("Could not play voice output. Please try again.");
+          fallbackToBrowserSpeech();
         };
         await audio.play();
         setSpeakingMessageId(messageId);
-      } else if (res.provider === "browser") {
-        if (typeof window === "undefined" || !("speechSynthesis" in window)) {
-          setSpeechError("Voice output is not supported in this browser.");
-          return;
-        }
-
-        window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = language === "hi" ? "hi-IN" : "en-US";
-        utterance.onend = () => {
-          setSpeakingMessageId(null);
-        };
-        utterance.onerror = () => {
-          setSpeakingMessageId(null);
-        };
-        window.speechSynthesis.speak(utterance);
-        setSpeakingMessageId(messageId);
-      } else if (res.error) {
-        setSpeechError(res.error);
-        setSpeakingMessageId(null);
+      } else {
+        fallbackToBrowserSpeech();
       }
     } catch (err) {
-      console.error("TTS playback failed:", err);
-      setSpeechError("Could not play voice output. Please try again.");
-      setSpeakingMessageId(null);
+      console.error("TTS playback failed, attempting browser fallback:", err);
+      fallbackToBrowserSpeech();
     }
   };
 
@@ -1106,10 +1288,10 @@ export default function WorkerPage() {
               <button
                 type="button"
                 className="relative p-2 text-[#5C6460] hover:text-[#1C2B29] rounded-full hover:bg-[#F0EDE6] transition"
-                onClick={() => alert("All machine systems nominal. No unread alerts.")}
+                onClick={() => setActiveTab("history")}
+                aria-label="View history"
               >
                 <Bell className="w-5 h-5" />
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#D95A2B] rounded-full" />
               </button>
 
               <button
@@ -1435,6 +1617,12 @@ export default function WorkerPage() {
                       </div>
 
                       <div className="bg-white border border-[#EDE8E0] rounded-2xl rounded-tl-xs p-3.5 shadow-xs space-y-3">
+                        {m.stopped ? (
+                          <p className="text-xs text-[#5C6460] italic leading-relaxed">
+                            Stopped.
+                          </p>
+                        ) : (
+                          <>
                         {/* Status Badge */}
                         {m.status && (
                           <div className="flex items-center gap-2">
@@ -1537,7 +1725,7 @@ export default function WorkerPage() {
                           <div className="flex items-center gap-2">
                             <button
                               type="button"
-                              onClick={() => handleSpeak(m.id, m.text, m.language)}
+                              onClick={() => handleSpeak(m.id, m.text, selectedLanguage)}
                               className={`p-1.5 rounded-lg border text-xs flex items-center gap-1 transition ${
                                 speakingMessageId === m.id
                                   ? "bg-[#FDF2ED] border-[#D95A2B] text-[#D95A2B]"
@@ -1650,6 +1838,8 @@ export default function WorkerPage() {
                             </div>
                           )}
                         </div>
+                        </>
+                        )}
                       </div>
                     </div>
                   )}
@@ -1701,12 +1891,12 @@ export default function WorkerPage() {
                   e.preventDefault();
                   handleSendQuery();
                 }}
-                className="flex items-center gap-2"
+                className="flex items-center gap-1.5 sm:gap-2"
               >
                 <button
                   type="button"
                   onClick={() => setShowCameraModal(true)}
-                  className="p-2 text-[#5C6460] hover:text-[#1C2B29] rounded-xl hover:bg-[#FAF8F5] transition"
+                  className="p-2 text-[#5C6460] hover:text-[#1C2B29] rounded-xl hover:bg-[#FAF8F5] transition shrink-0"
                 >
                   <Paperclip className="w-5 h-5" />
                 </button>
@@ -1716,21 +1906,45 @@ export default function WorkerPage() {
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
                   placeholder="Type your question..."
-                  className="flex-1 bg-[#FAF8F5] border border-[#E5E0D8] rounded-2xl px-4 py-2.5 text-xs text-[#1C2B29] focus:outline-none focus:border-[#D95A2B] transition"
+                  className="flex-1 min-w-0 bg-[#FAF8F5] border border-[#E5E0D8] rounded-2xl px-3 sm:px-4 py-2.5 text-xs text-[#1C2B29] focus:outline-none focus:border-[#D95A2B] transition"
                 />
 
                 <button
                   type="button"
+                  onClick={() => handleLanguageSelect(selectedLanguage === "en" ? "hi" : "en")}
+                  aria-label={`Current voice language: ${selectedLanguage === "en" ? "English" : "Hindi"}. Click to toggle.`}
+                  className="min-h-[48px] px-2 sm:px-2.5 rounded-xl border border-[#E5E0D8] bg-[#FAF8F5] hover:bg-white text-[#1C2B29] flex items-center gap-1 text-xs font-semibold transition shrink-0"
+                >
+                  <Languages className="w-4 h-4 text-[#5C6460]" />
+                  <span>{selectedLanguage === "en" ? "EN" : "हिन्दी"}</span>
+                </button>
+
+                <button
+                  type="button"
                   onClick={() => setShowVoiceModal(true)}
-                  className="p-2 text-[#5C6460] hover:text-[#D95A2B] rounded-xl hover:bg-[#FAF8F5] transition"
+                  aria-label="Ask with voice"
+                  className="min-h-[48px] min-w-[48px] p-2 text-[#5C6460] hover:text-[#D95A2B] rounded-xl hover:bg-[#FAF8F5] flex items-center justify-center transition shrink-0"
                 >
                   <Mic className="w-5 h-5" />
                 </button>
 
+                {isSending && (
+                  <button
+                    type="button"
+                    onClick={handleStopQuery}
+                    aria-label="Stop generating answer"
+                    className="min-h-[48px] px-3.5 rounded-2xl border border-[#E5E0D8] bg-white hover:bg-[#FAF8F5] text-[#1C2B29] flex items-center gap-1.5 text-xs font-semibold transition"
+                  >
+                    <Square className="w-3.5 h-3.5 fill-[#1C2B29] text-[#1C2B29]" />
+                    <span>Stop</span>
+                  </button>
+                )}
+
                 <button
                   type="submit"
                   disabled={(!chatInput.trim() && !pendingImageBlob) || isSending}
-                  className="w-10 h-10 rounded-2xl bg-[#D95A2B] hover:bg-[#C84E18] text-white flex items-center justify-center disabled:opacity-50 transition shadow-xs"
+                  aria-label="Send query"
+                  className="w-10 h-10 min-h-[48px] min-w-[48px] rounded-2xl bg-[#D95A2B] hover:bg-[#C84E18] text-white flex items-center justify-center disabled:opacity-50 transition shadow-xs"
                 >
                   <Send className="w-4 h-4" />
                 </button>
@@ -1890,56 +2104,134 @@ export default function WorkerPage() {
           </main>
         )}
 
+        {/* ─── TAB 5: MY TICKETS ─────────────────────────────────────── */}
+        {activeTab === "my_tickets" && (
+          <main className="flex-1 px-4 py-4 space-y-4">
+            <h2 className="text-base font-bold text-[#1C2B29]">My Tickets</h2>
+            {selectedMyTicketId ? (
+              <TicketThread
+                ticketId={selectedMyTicketId}
+                canReply={false}
+                onBack={() => setSelectedMyTicketId(null)}
+                onChanged={loadMyTickets}
+              />
+            ) : (
+              <TicketList
+                tickets={myTickets}
+                loading={myTicketsLoading}
+                error={myTicketsError}
+                emptyText="You haven't submitted any escalation tickets yet."
+                onOpen={(id) => setSelectedMyTicketId(id)}
+                onRefresh={loadMyTickets}
+              />
+            )}
+          </main>
+        )}
+
+        {/* ─── TAB 6: ASSIGNED TICKETS (EXPERTS ONLY) ────────────────── */}
+        {isExpertRole(userRole) && activeTab === "assigned_tickets" && (
+          <main className="flex-1 px-4 py-4 space-y-4">
+            <h2 className="text-base font-bold text-[#1C2B29]">Assigned to Me</h2>
+            {selectedAssignedTicketId ? (
+              <TicketThread
+                ticketId={selectedAssignedTicketId}
+                canReply={true}
+                onBack={() => setSelectedAssignedTicketId(null)}
+                onChanged={loadAssignedTickets}
+              />
+            ) : (
+              <TicketList
+                tickets={assignedTickets}
+                loading={assignedTicketsLoading}
+                error={assignedTicketsError}
+                emptyText="No escalation tickets are currently assigned to you."
+                onOpen={(id) => setSelectedAssignedTicketId(id)}
+                onRefresh={loadAssignedTickets}
+              />
+            )}
+          </main>
+        )}
+
         {/* ─── FIXED BOTTOM DOCK NAVIGATION ─────────────────────────── */}
-        <nav className="fixed bottom-0 left-0 right-0 z-30 max-w-md mx-auto bg-white/95 backdrop-blur-md border-t border-[#EDE8E0] px-6 py-2 flex items-center justify-between">
+        <nav className="fixed bottom-0 left-0 right-0 z-30 max-w-md mx-auto bg-white/95 backdrop-blur-md border-t border-[#EDE8E0] px-1 sm:px-3 py-2 flex items-center justify-around">
           <button
             type="button"
             onClick={() => setActiveTab("home")}
-            className={`flex flex-col items-center gap-1 text-[11px] font-semibold transition ${
+            className={`min-h-[48px] flex-1 min-w-0 flex flex-col items-center justify-center gap-1 text-[10px] sm:text-[11px] font-semibold transition cursor-pointer ${
               activeTab === "home" ? "text-[#D95A2B]" : "text-[#5C6460] hover:text-[#1C2B29]"
             }`}
           >
-            <Home className="w-5 h-5" />
-            <span>Home</span>
+            <Home className="w-5 h-5 shrink-0" />
+            <span className="truncate max-w-full">Home</span>
           </button>
 
           <button
             type="button"
             onClick={() => setActiveTab("chat")}
-            className={`flex flex-col items-center gap-1 text-[11px] font-semibold transition ${
+            className={`min-h-[48px] flex-1 min-w-0 flex flex-col items-center justify-center gap-1 text-[10px] sm:text-[11px] font-semibold transition cursor-pointer ${
               activeTab === "chat" ? "text-[#D95A2B]" : "text-[#5C6460] hover:text-[#1C2B29]"
             }`}
           >
-            <MessageSquare className="w-5 h-5" />
-            <span>Chat</span>
+            <MessageSquare className="w-5 h-5 shrink-0" />
+            <span className="truncate max-w-full">Chat</span>
           </button>
 
           <button
             type="button"
             onClick={() => setActiveTab("machines")}
-            className={`flex flex-col items-center gap-1 text-[11px] font-semibold transition ${
+            className={`min-h-[48px] flex-1 min-w-0 flex flex-col items-center justify-center gap-1 text-[10px] sm:text-[11px] font-semibold transition cursor-pointer ${
               activeTab === "machines" ? "text-[#D95A2B]" : "text-[#5C6460] hover:text-[#1C2B29]"
             }`}
           >
-            <Cpu className="w-5 h-5" />
-            <span>Machines</span>
+            <Cpu className="w-5 h-5 shrink-0" />
+            <span className="truncate max-w-full">Machines</span>
           </button>
 
           <button
             type="button"
             onClick={() => setActiveTab("history")}
-            className={`flex flex-col items-center gap-1 text-[11px] font-semibold transition ${
+            className={`min-h-[48px] flex-1 min-w-0 flex flex-col items-center justify-center gap-1 text-[10px] sm:text-[11px] font-semibold transition cursor-pointer ${
               activeTab === "history" ? "text-[#D95A2B]" : "text-[#5C6460] hover:text-[#1C2B29]"
             }`}
           >
-            <Clock className="w-5 h-5" />
-            <span>History</span>
+            <Clock className="w-5 h-5 shrink-0" />
+            <span className="truncate max-w-full">History</span>
           </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedMyTicketId(null);
+              setActiveTab("my_tickets");
+            }}
+            className={`min-h-[48px] flex-1 min-w-0 flex flex-col items-center justify-center gap-1 text-[10px] sm:text-[11px] font-semibold transition cursor-pointer ${
+              activeTab === "my_tickets" ? "text-[#D95A2B]" : "text-[#5C6460] hover:text-[#1C2B29]"
+            }`}
+          >
+            <FileText className="w-5 h-5 shrink-0" />
+            <span className="truncate max-w-full">My Tickets</span>
+          </button>
+
+          {isExpertRole(userRole) && (
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedAssignedTicketId(null);
+                setActiveTab("assigned_tickets");
+              }}
+              className={`min-h-[48px] flex-1 min-w-0 flex flex-col items-center justify-center gap-1 text-[10px] sm:text-[11px] font-semibold transition cursor-pointer ${
+                activeTab === "assigned_tickets" ? "text-[#D95A2B]" : "text-[#5C6460] hover:text-[#1C2B29]"
+              }`}
+            >
+              <Wrench className="w-5 h-5 shrink-0" />
+              <span className="truncate max-w-full">Assigned</span>
+            </button>
+          )}
         </nav>
 
         {/* ─── MODAL 1: VOICE QUERY ─────────────────────────────────── */}
         {showVoiceModal && (
-          <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4" onClick={(e) => { if (e.target === e.currentTarget) closeVoiceModal(); }}>
             <div className="w-full max-w-sm bg-white rounded-3xl p-6 shadow-2xl border border-[#EDE8E0] text-center space-y-6">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-[#5C6460] uppercase tracking-wider">
@@ -1952,6 +2244,32 @@ export default function WorkerPage() {
                 >
                   <X className="w-5 h-5" />
                 </button>
+              </div>
+
+              {/* Language Selector in Voice Modal */}
+              <div className="flex items-center justify-center gap-2 pt-1 pb-1">
+                <span className="text-xs font-semibold text-[#5C6460]">Language:</span>
+                <div className="inline-flex rounded-xl p-1 bg-[#FAF8F5] border border-[#E5E0D8]">
+                  {LANGUAGES.map((lang) => {
+                    const isSelected = selectedLanguage === lang.code;
+                    return (
+                      <button
+                        key={lang.code}
+                        type="button"
+                        onClick={() => handleLanguageSelect(lang.code)}
+                        aria-label={`Select ${lang.label} language for voice`}
+                        className={`min-h-[48px] px-3.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${
+                          isSelected
+                            ? "bg-[#D95A2B] text-white shadow-xs"
+                            : "text-[#5C6460] hover:text-[#1C2B29]"
+                        }`}
+                      >
+                        <Languages className="w-3.5 h-3.5" />
+                        <span>{lang.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
               {/* State: IDLE */}
@@ -2092,7 +2410,7 @@ export default function WorkerPage() {
 
         {/* ─── MODAL 2: NEED HUMAN SUPPORT / ESCALATE ───────────────── */}
         {showEscalate && (
-          <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4" onClick={(e) => { if (e.target === e.currentTarget) { setShowEscalate(false); setEscalateSubmitted(false); setEscalateError(null); handleRemoveEscalateImage(); } }}>
             <div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl border border-[#EDE8E0] space-y-4">
               <div className="flex items-center justify-between border-b border-[#EDE8E0] pb-2">
                 <div className="flex items-center gap-2">
@@ -2283,7 +2601,7 @@ export default function WorkerPage() {
 
         {/* ─── MODAL 3: DOCUMENT SOP VIEWER ─────────────────────────── */}
         {activeDocSource !== null && (
-          <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-3">
+          <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-3" onClick={(e) => { if (e.target === e.currentTarget) handleCloseDocViewer(); }}>
             <div className="w-full max-w-md bg-white rounded-3xl p-5 shadow-2xl border border-[#EDE8E0] space-y-4 max-h-[90vh] flex flex-col">
               <div className="flex items-center justify-between border-b border-[#EDE8E0] pb-3">
                 <div className="flex items-center gap-2">
@@ -2352,7 +2670,7 @@ export default function WorkerPage() {
 
         {/* ─── MODAL 4: USER PROFILE ───────────────────────────────── */}
         {showProfileModal && (
-          <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4" onClick={(e) => { if (e.target === e.currentTarget) { setShowProfileModal(false); setShowPasswordSection(false); setPasswordChangeError(null); setPasswordChangeSuccess(false); setCurrentPassword(""); setNewPassword(""); setConfirmPassword(""); } }}>
             <div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl border border-[#EDE8E0] space-y-4">
               <div className="flex items-center justify-between border-b border-[#EDE8E0] pb-2">
                 <div className="flex items-center gap-2">
@@ -2518,7 +2836,7 @@ export default function WorkerPage() {
 
         {/* ─── MODAL 5: GUIDED TROUBLESHOOTING ──────────────────────── */}
         {showTroubleshoot && (
-          <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4" onClick={(e) => { if (e.target === e.currentTarget) handleCloseTroubleshoot(); }}>
             <div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl border border-[#EDE8E0] space-y-4 max-h-[90vh] overflow-y-auto">
               <div className="flex items-center justify-between">
                 <h3 className="font-bold text-base text-[#1C2B29]">Guided Troubleshooting</h3>
@@ -2672,7 +2990,7 @@ export default function WorkerPage() {
 
         {/* ─── MODAL 6: EXPERT TIPS ──────────────────────────────────── */}
         {showTips && (
-          <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4" onClick={(e) => { if (e.target === e.currentTarget) handleCloseTips(); }}>
             <div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl border border-[#EDE8E0] space-y-4 max-h-[90vh] overflow-y-auto">
               <div className="flex items-center justify-between">
                 <h3 className="font-bold text-base text-[#1C2B29]">

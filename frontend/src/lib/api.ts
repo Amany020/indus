@@ -147,6 +147,13 @@ export interface TroubleshootingTurnResponse {
   escalation_reason: string | null;
 }
 
+export const LANGUAGES = [
+  { code: "en", label: "English", tag: "en-IN" },
+  { code: "hi", label: "हिन्दी", tag: "hi-IN" },
+] as const;
+
+export type VoiceLanguageCode = (typeof LANGUAGES)[number]["code"];
+
 export interface TranscriptResponse {
   transcript: string;
   detected_language: string;
@@ -180,6 +187,8 @@ export interface EscalationTicket {
   updated_at: string;
   machine_name?: string | null;
   worker_name?: string | null;
+  assigned_expert_id?: string | null;
+  resolved_at?: string | null;
 }
 
 export interface EscalationDetail extends EscalationTicket {
@@ -206,6 +215,36 @@ export interface AnalyticsSummary {
   safety_gate_events_count: number;
 }
 
+export interface AnalyticsBreakdown {
+  days: number;
+  total: number;
+  solved: number;
+  unsolved: number;
+  risky: number;
+  normal: number;
+  matrix: {
+    solved_risky: number;
+    solved_normal: number;
+    unsolved_risky: number;
+    unsolved_normal: number;
+  };
+  by_priority: Array<{ priority: string; count: number }>;
+  by_machine: Array<{
+    machine_id: string;
+    machine_name: string;
+    total: number;
+    solved: number;
+    unsolved: number;
+    risky: number;
+  }>;
+  definitions: {
+    solved: string;
+    unsolved: string;
+    risky: string;
+    normal: string;
+  };
+}
+
 export interface Factory {
   id: string;
   name: string;
@@ -221,6 +260,7 @@ export interface Branch {
 
 export interface AuthUserData {
   id: string;
+  user_id?: string;
   email: string;
   full_name: string;
   role: string;
@@ -270,6 +310,57 @@ export interface SopProposal {
   updated_at: string;
 }
 
+export interface EscalationTicketListItem {
+  id: string;
+  status: "open" | "in_progress" | "resolved" | "cancelled" | string;
+  priority: "normal" | "high" | string;
+  created_at: string;
+  question: string | null;
+  reply_count: number;
+  last_reply_at?: string | null;
+}
+
+export interface TicketThreadDetail {
+  id: string;
+  status: "open" | "in_progress" | "resolved" | "cancelled" | string;
+  priority: "normal" | "high" | string;
+  created_at: string;
+  question: string | null;
+  ai_drafted_brief: string | null;
+  resolution_notes: string | null;
+  assigned_expert_id: string | null;
+  resolved_at?: string | null;
+}
+
+export interface TicketReply {
+  id: string;
+  author_id: string;
+  author_name: string;
+  author_role: string;
+  kind: "text" | "image" | "audio" | string;
+  body: string | null;
+  media_url: string | null;
+  created_at: string;
+}
+
+export interface TicketThreadResponse {
+  ticket: TicketThreadDetail;
+  replies: TicketReply[];
+}
+
+export interface EscalationAssignResponse {
+  id: string;
+  assigned_expert_id: string | null;
+  status: string;
+}
+
+export interface PostTicketReplyArgs {
+  kind: "text" | "image" | "audio";
+  body?: string;
+  file?: File | Blob;
+  resolve?: boolean;
+}
+
 export interface SendImageQueryArgs {
   image: File | Blob;
   queryText?: string;
@@ -279,6 +370,14 @@ export interface SendImageQueryArgs {
   machine_id?: string;
   detected_language?: string;
   session_id?: string;
+}
+
+export function isAbortError(e: unknown): boolean {
+  if (!e) return false;
+  if (typeof e === "object" && "name" in e && (e as any).name === "AbortError") {
+    return true;
+  }
+  return false;
 }
 
 export async function sendImageQuery(
@@ -313,6 +412,9 @@ export async function sendImageQuery(
       signal: args.signal,
     });
   } catch (err: any) {
+    if (isAbortError(err)) {
+      throw err;
+    }
     const status =
       err?.status ||
       (err?.message?.includes("413")
@@ -512,7 +614,7 @@ export const api = {
 
   getUsers: () => apiFetch<AuthUserData[]>("/auth/users"),
 
-  promoteToReviewer: (userId: string) =>
+  setUserRole: (userId: string, role: "worker" | "expert" | "supervisor") =>
     apiFetch<{
       user_id: string;
       full_name: string | null;
@@ -521,9 +623,11 @@ export const api = {
       branch_id: string | null;
     }>(`/auth/users/${userId}/role`, {
       method: "PATCH",
-      role: "admin",
-      body: JSON.stringify({ role: "supervisor" }),
+      body: JSON.stringify({ role }),
     }),
+
+  promoteToReviewer: (userId: string) =>
+    api.setUserRole(userId, "supervisor"),
 
   changePassword: (current_password: string, new_password: string) =>
     apiFetch<{ status: string; message: string }>("/auth/change-password", {
@@ -550,18 +654,22 @@ export const api = {
   resolveMachineByQr: (code: string) => resolveMachineByQr(code),
 
   // Query
-  sendQuery: (body: {
-    machine_id: string;
-    query_text: string;
-    input_mode?: string;
-    detected_language?: string;
-    session_id?: string;
-    raw_transcript?: string;
-    transcript_confirmed?: boolean;
-  }) =>
+  sendQuery: (
+    body: {
+      machine_id: string;
+      query_text: string;
+      input_mode?: string;
+      detected_language?: string;
+      session_id?: string;
+      raw_transcript?: string;
+      transcript_confirmed?: boolean;
+    },
+    signal?: AbortSignal
+  ) =>
     apiFetch<QueryResponse>("/query/", {
       method: "POST",
       body: JSON.stringify(body),
+      signal,
     }),
 
   sendImageQuery: (args: SendImageQueryArgs) => sendImageQuery(args),
@@ -583,9 +691,15 @@ export const api = {
     }),
 
   // Voice
-  transcribe: async (audioBlob: Blob): Promise<TranscriptResponse> => {
+  transcribe: async (
+    audioBlob: Blob,
+    language?: string
+  ): Promise<TranscriptResponse> => {
     const form = new FormData();
     form.append("file", audioBlob, "recording.webm");
+    if (language) {
+      form.append("language", language);
+    }
     return apiFetch<TranscriptResponse>("/stt", {
       method: "POST",
       body: form,
@@ -726,8 +840,9 @@ export const api = {
   getAnalytics: (machineId?: string) =>
     apiFetch<AnalyticsSummary>(
       `/analytics/summary${machineId ? `?machine_id=${machineId}` : ""}`,
-      { role: "manager" }
+      { role: "reviewer" }
     ),
+  getAnalyticsBreakdown: (days: number = 30) => getAnalyticsBreakdown(days),
 
   // Troubleshooting
   createTroubleshootingSession: (machine_id: string, symptom_text: string) =>
@@ -768,6 +883,208 @@ export const api = {
 
   // Health
   health: () => apiFetch<{ status: string; version: string }>("/health"),
+
+  // Expert ticket handling
+  getMyTickets: () => getMyTickets(),
+  getAssignedTickets: () => getAssignedTickets(),
+  getTicketThread: (id: string) => getTicketThread(id),
+  assignTicket: (id: string, expertId: string | null) => assignTicket(id, expertId),
+  postTicketReply: (id: string, args: PostTicketReplyArgs) => postTicketReply(id, args),
+
+  // Document file & report downloads
+  getDocumentFileUrl: (id: string) => getDocumentFileUrl(id),
+  downloadReport: (kind: "escalations" | "analytics" | "factory-summary", days?: number, format?: "pdf" | "csv") => downloadReport(kind, days, format),
+  apiDownload: (path: string, fallbackFilename?: string, opts?: FetchOptions) => apiDownload(path, fallbackFilename, opts),
 };
+
+export function parseApiError(err: unknown, fallback = "Operation failed"): string {
+  if (err && typeof err === "object") {
+    if ("responseBody" in err && typeof (err as any).responseBody === "string") {
+      try {
+        const parsed = JSON.parse((err as any).responseBody);
+        if (parsed?.detail) {
+          return typeof parsed.detail === "string" ? parsed.detail : JSON.stringify(parsed.detail);
+        }
+      } catch (_) {}
+    }
+    if ("message" in err && typeof (err as any).message === "string") {
+      const msg = (err as any).message;
+      try {
+        const jsonStart = msg.indexOf("{");
+        if (jsonStart !== -1) {
+          const parsed = JSON.parse(msg.slice(jsonStart));
+          if (parsed?.detail) return typeof parsed.detail === "string" ? parsed.detail : JSON.stringify(parsed.detail);
+        }
+      } catch (_) {}
+      return msg;
+    }
+  }
+  return fallback;
+}
+
+export async function getMyTickets(): Promise<EscalationTicketListItem[]> {
+  try {
+    return await apiFetch<EscalationTicketListItem[]>("/escalations/mine");
+  } catch (err) {
+    throw new Error(parseApiError(err, "Failed to load tickets"));
+  }
+}
+
+export async function getAssignedTickets(): Promise<EscalationTicketListItem[]> {
+  try {
+    return await apiFetch<EscalationTicketListItem[]>("/escalations/assigned", { role: "expert" });
+  } catch (err) {
+    throw new Error(parseApiError(err, "Failed to load assigned tickets"));
+  }
+}
+
+export async function getTicketThread(id: string): Promise<TicketThreadResponse> {
+  try {
+    return await apiFetch<TicketThreadResponse>(`/escalations/${encodeURIComponent(id)}/thread`);
+  } catch (err) {
+    throw new Error(parseApiError(err, "Failed to load ticket thread"));
+  }
+}
+
+export async function assignTicket(
+  id: string,
+  expertId: string | null
+): Promise<EscalationAssignResponse> {
+  try {
+    return await apiFetch<EscalationAssignResponse>(`/escalations/${encodeURIComponent(id)}/assign`, {
+      method: "PATCH",
+      body: JSON.stringify({ expert_id: expertId }),
+      role: "reviewer",
+    });
+  } catch (err) {
+    throw new Error(parseApiError(err, "Failed to assign ticket"));
+  }
+}
+
+export async function postTicketReply(
+  id: string,
+  args: PostTicketReplyArgs
+): Promise<TicketReply> {
+  const form = new FormData();
+  form.append("kind", args.kind);
+  if (args.body !== undefined && args.body !== null && args.body.trim() !== "") {
+    form.append("body", args.body.trim());
+  }
+  if (args.file) {
+    form.append("file", args.file);
+  }
+  if (args.resolve !== undefined) {
+    form.append("resolve", args.resolve ? "true" : "false");
+  }
+
+  try {
+    return await apiFetch<TicketReply>(`/escalations/${encodeURIComponent(id)}/replies`, {
+      method: "POST",
+      body: form,
+    });
+  } catch (err) {
+    throw new Error(parseApiError(err, "Failed to post reply"));
+  }
+}
+
+export interface DocumentFileUrlResponse {
+  url: string;
+  filename: string;
+  content_type: string;
+}
+
+export async function getDocumentFileUrl(id: string): Promise<DocumentFileUrlResponse> {
+  try {
+    return await apiFetch<DocumentFileUrlResponse>(`/documents/${encodeURIComponent(id)}/file-url`, {
+      role: "reviewer",
+    });
+  } catch (err) {
+    throw new Error(parseApiError(err, "Failed to get document file URL"));
+  }
+}
+
+export async function apiDownload(
+  path: string,
+  fallbackFilename: string = "download.csv",
+  opts: FetchOptions = {}
+): Promise<{ blob: Blob; filename: string }> {
+  const { role = "reviewer", ...fetchOpts } = opts;
+  const headers: Record<string, string> = {
+    ...(fetchOpts.headers as Record<string, string>),
+  };
+
+  const token = getToken();
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  } else {
+    headers["x-role"] = role;
+  }
+
+  const res = await fetch(`${BASE_URL}${path}`, {
+    ...fetchOpts,
+    headers,
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "Unknown error");
+    let errorDetail = text;
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed?.detail) {
+        errorDetail = typeof parsed.detail === "string" ? parsed.detail : JSON.stringify(parsed.detail);
+      }
+    } catch {
+      // not JSON
+    }
+    const err = new Error(errorDetail);
+    (err as any).status = res.status;
+    (err as any).responseBody = text;
+    throw err;
+  }
+
+  let filename = fallbackFilename;
+  const disposition = res.headers.get("Content-Disposition");
+  if (disposition) {
+    const match = disposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+    if (match && match[1]) {
+      filename = match[1].replace(/['"]/g, "").trim();
+    }
+  }
+
+  const blob = await res.blob();
+  return { blob, filename };
+}
+
+export async function getAnalyticsBreakdown(days: number = 30): Promise<AnalyticsBreakdown> {
+  return apiFetch<AnalyticsBreakdown>(`/analytics/breakdown?days=${days}`, { role: "reviewer" });
+}
+
+export async function downloadReport(
+  kind: "escalations" | "analytics" | "factory-summary",
+  days?: number,
+  format: "pdf" | "csv" = "pdf"
+): Promise<void> {
+  const ext = format === "pdf" ? "pdf" : "csv";
+  let path: string;
+  if (kind === "escalations") path = `/reports/escalations.${ext}`;
+  else if (kind === "analytics") path = `/reports/analytics.${ext}`;
+  else path = `/reports/factory-summary.${ext}${days ? `?days=${days}` : ""}`;
+  const fallback = `${kind}.${ext}`;
+  try {
+    const { blob, filename } = await apiDownload(path, fallback, { role: "reviewer" });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  } catch (err) {
+    throw new Error(parseApiError(err, `Failed to download ${kind} report`));
+  }
+}
+
+
 
 
