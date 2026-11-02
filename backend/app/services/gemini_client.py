@@ -9,9 +9,12 @@ from __future__ import annotations
 import json
 import logging
 import time
+import warnings
 from typing import Optional, Dict, Any, List
 
-import google.generativeai as genai
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore", category=FutureWarning)
+    import google.generativeai as genai
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception
 
 from app.core.config import settings

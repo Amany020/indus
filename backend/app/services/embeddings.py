@@ -8,6 +8,7 @@ the vector(768) column in Supabase without a migration.
 from __future__ import annotations
 
 import logging
+import warnings
 from typing import List
 
 try:
@@ -17,7 +18,9 @@ try:
 except ImportError:
     _USE_NEW_SDK = False
 
-import google.generativeai as genai  # fallback / type stubs
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore", category=FutureWarning)
+    import google.generativeai as genai  # fallback / type stubs
 
 from app.core.config import settings
 
