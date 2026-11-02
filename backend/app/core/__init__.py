@@ -1,0 +1,1 @@
+# IndustryMind core package

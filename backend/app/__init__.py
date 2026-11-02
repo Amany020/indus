@@ -1,0 +1,1 @@
+# IndustryMind backend app package
