@@ -26,7 +26,7 @@ const NAV_ITEMS: {
   { view: "dashboard", icon: LayoutDashboard, label: "Dashboard", minRole: "worker" },
   { view: "chat", icon: BookOpen, label: "SOP Library", minRole: "worker" },
   { view: "tips", icon: Layers, label: "Field Knowledge", minRole: "worker" },
-  { view: "escalations", icon: AlertTriangle, label: "Escalations", minRole: "reviewer", badge: 3 },
+  { view: "escalations", icon: AlertTriangle, label: "Escalations", minRole: "reviewer" },
   { view: "admin", icon: Settings, label: "Settings", minRole: "admin" },
 ];
 
@@ -37,7 +37,7 @@ const ROLE_LEVEL: Record<DisplayRole, number> = {
 };
 
 export default function NavRail() {
-  const { view, setView, role, setRole, machine } = useApp();
+  const { view, setView, role, setRole, machine, user, factory } = useApp();
 
   const visibleItems = NAV_ITEMS.filter(
     (item) => ROLE_LEVEL[role] >= ROLE_LEVEL[item.minRole]
@@ -81,7 +81,7 @@ export default function NavRail() {
               lineHeight: 1.2,
             }}
           >
-            IndustryMind
+            {factory?.name || "IndustryMind"}
           </div>
           <div
             style={{
@@ -90,7 +90,7 @@ export default function NavRail() {
               fontWeight: 500,
             }}
           >
-            Factory Alpha · Line A
+            Factory · {role.charAt(0).toUpperCase() + role.slice(1)}
           </div>
         </div>
       </div>
@@ -165,7 +165,7 @@ export default function NavRail() {
               flexShrink: 0,
             }}
           >
-            AY
+            {user?.full_name ? user.full_name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase() : "?"}
           </div>
           <div style={{ flex: 1, overflow: "hidden" }}>
             <div
@@ -178,7 +178,7 @@ export default function NavRail() {
                 overflow: "hidden",
               }}
             >
-              Aman Yadav
+              {user?.full_name || "User"}
             </div>
             <div
               style={{

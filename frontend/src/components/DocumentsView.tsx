@@ -1,8 +1,16 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useApp } from "@/lib/context";
 import { api, DocumentOut, Machine } from "@/lib/api";
+import { FileText, Loader2 } from "lucide-react";
+import PdfPreviewModal from "@/components/PdfPreviewModal";
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
 
 export default function DocumentsView() {
   const { machine, role } = useApp();
@@ -16,6 +24,26 @@ export default function DocumentsView() {
   const [revision, setRevision] = useState<string>("1.0");
   const [file, setFile] = useState<File | null>(null);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  // Upload preview modal state
+  const [uploadPreviewUrl, setUploadPreviewUrl] = useState<string | null>(null);
+  const [showUploadPreview, setShowUploadPreview] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // View document modal state
+  const [viewDocModalData, setViewDocModalData] = useState<{ title: string; src: string } | null>(null);
+  const [viewLoadingId, setViewLoadingId] = useState<string | null>(null);
+  const [viewErrorDocId, setViewErrorDocId] = useState<string | null>(null);
+  const [viewErrorText, setViewErrorText] = useState<string | null>(null);
+
+  // Revoke object URL on unmount
+  useEffect(() => {
+    return () => {
+      if (uploadPreviewUrl) {
+        URL.revokeObjectURL(uploadPreviewUrl);
+      }
+    };
+  }, [uploadPreviewUrl]);
 
   useEffect(() => {
     loadData();
@@ -42,8 +70,52 @@ export default function DocumentsView() {
     }
   };
 
-  const handleUpload = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = e.target.files?.[0];
+    if (!selected) return;
+
+    // Validation: .pdf only
+    if (!selected.name.toLowerCase().endsWith(".pdf")) {
+      setMessage({ type: "error", text: "Please select a valid PDF file (.pdf extension only)." });
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      setFile(null);
+      return;
+    }
+
+    // Validation: 50 MB
+    const maxBytes = 50 * 1024 * 1024;
+    if (selected.size > maxBytes) {
+      setMessage({ type: "error", text: "File size exceeds the 50 MB limit." });
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      setFile(null);
+      return;
+    }
+
+    // Revoke previous URL if any
+    if (uploadPreviewUrl) {
+      URL.revokeObjectURL(uploadPreviewUrl);
+    }
+
+    const url = URL.createObjectURL(selected);
+    setUploadPreviewUrl(url);
+    setFile(selected);
+    setShowUploadPreview(true);
+    setMessage(null);
+  };
+
+  const handleCancelUploadPreview = () => {
+    if (uploadPreviewUrl) {
+      URL.revokeObjectURL(uploadPreviewUrl);
+      setUploadPreviewUrl(null);
+    }
+    setFile(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+    setShowUploadPreview(false);
+  };
+
+  const executeUpload = async () => {
     if (!file || !selectedMachineId) {
       setMessage({ type: "error", text: "Please select a PDF file and target machine." });
       return;
@@ -58,12 +130,48 @@ export default function DocumentsView() {
         text: `Successfully uploaded ${file.name}. Ingestion and chunking initiated!`,
       });
       setFile(null);
-      // Reload documents
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
       await loadData();
     } catch (err: any) {
       setMessage({ type: "error", text: err.message || "Failed to upload document" });
     } finally {
       setUploading(false);
+    }
+  };
+
+  const handleConfirmUpload = async () => {
+    if (uploadPreviewUrl) {
+      URL.revokeObjectURL(uploadPreviewUrl);
+      setUploadPreviewUrl(null);
+    }
+    setShowUploadPreview(false);
+    await executeUpload();
+  };
+
+  const handleUpload = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await executeUpload();
+  };
+
+  const handleViewDocument = async (doc: DocumentOut) => {
+    setViewLoadingId(doc.id);
+    setViewErrorDocId(null);
+    setViewErrorText(null);
+    try {
+      const res = await api.getDocumentFileUrl(doc.id);
+      setViewDocModalData({
+        title: res.filename || doc.filename || "Document PDF",
+        src: res.url,
+      });
+    } catch (err: any) {
+      const errMsg = err?.message || "Failed to load document PDF";
+      setViewErrorDocId(doc.id);
+      setViewErrorText(errMsg);
+      setMessage({ type: "error", text: errMsg });
+    } finally {
+      setViewLoadingId(null);
     }
   };
 
@@ -177,9 +285,10 @@ export default function DocumentsView() {
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">Select PDF File</label>
             <input
+              ref={fileInputRef}
               type="file"
               accept=".pdf"
-              onChange={(e) => setFile(e.target.files ? e.target.files[0] : null)}
+              onChange={handleFileSelect}
               className="w-full text-xs px-2 py-1.5 border border-gray-300 rounded-lg outline-none file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[11px] file:font-semibold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100"
             />
           </div>
@@ -256,15 +365,38 @@ export default function DocumentsView() {
                       {doc.page_count || 1}
                     </td>
                     <td className="py-3.5 px-4 text-right">
-                      {/* Remove / Delete Document Button */}
-                      <button
-                        onClick={() => handleDelete(doc.id, doc.filename)}
-                        disabled={deletingId === doc.id}
-                        className="px-3 py-1 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded-lg text-xs font-semibold transition-all duration-150 inline-flex items-center gap-1.5 disabled:opacity-50"
-                      >
-                        <span>🗑️</span>
-                        <span>{deletingId === doc.id ? "Deleting..." : "Delete Document"}</span>
-                      </button>
+                      <div className="inline-flex items-center justify-end gap-2">
+                        {/* View Document Button */}
+                        <button
+                          type="button"
+                          onClick={() => handleViewDocument(doc)}
+                          disabled={viewLoadingId === doc.id}
+                          className="min-h-[48px] px-3.5 py-1.5 bg-[#EDE8E0] hover:bg-[#E5E0D8] text-[#1C2B29] border border-[#E5E0D8] rounded-xl text-xs font-semibold transition-all inline-flex items-center gap-1.5 disabled:opacity-50"
+                        >
+                          {viewLoadingId === doc.id ? (
+                            <Loader2 className="w-4 h-4 animate-spin text-[#D95A2B]" />
+                          ) : (
+                            <FileText className="w-4 h-4 text-[#1C2B29]" />
+                          )}
+                          <span>{viewLoadingId === doc.id ? "Loading..." : "View"}</span>
+                        </button>
+
+                        {/* Remove / Delete Document Button */}
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(doc.id, doc.filename)}
+                          disabled={deletingId === doc.id}
+                          className="min-h-[48px] px-3.5 py-1.5 bg-[#FAF8F5] hover:bg-[#EDE8E0] text-[#D95A2B] border border-[#E5E0D8] rounded-xl text-xs font-semibold transition-all duration-150 inline-flex items-center gap-1.5 disabled:opacity-50"
+                        >
+                          <span>🗑️</span>
+                          <span>{deletingId === doc.id ? "Deleting..." : "Delete Document"}</span>
+                        </button>
+                      </div>
+                      {viewErrorDocId === doc.id && viewErrorText && (
+                        <div className="text-[11px] text-[#D95A2B] mt-1 text-right">
+                          {viewErrorText}
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -273,6 +405,29 @@ export default function DocumentsView() {
           </div>
         )}
       </div>
+
+      {/* Upload Preview Modal */}
+      {showUploadPreview && uploadPreviewUrl && file && (
+        <PdfPreviewModal
+          open={showUploadPreview}
+          title={`${file.name} (${formatFileSize(file.size)})`}
+          src={uploadPreviewUrl}
+          onClose={handleCancelUploadPreview}
+          onConfirm={handleConfirmUpload}
+          confirmLabel="Upload this document"
+          confirmLoading={uploading}
+        />
+      )}
+
+      {/* View Document Modal */}
+      {viewDocModalData && (
+        <PdfPreviewModal
+          open={!!viewDocModalData}
+          title={viewDocModalData.title}
+          src={viewDocModalData.src}
+          onClose={() => setViewDocModalData(null)}
+        />
+      )}
     </div>
   );
 }
