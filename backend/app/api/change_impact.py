@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.auth import get_current_user, UserContext
+from app.core.authz import resolve_factory_id
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +45,7 @@ async def list_impacts(
     query = (
         db.table("document_revision_impacts")
         .select("*")
-        .eq("factory_id", user.factory_id or settings.default_factory_id)
+        .eq("factory_id", resolve_factory_id(user))
         .order("created_at", desc=True)
     )
     if document_id:
@@ -73,7 +74,7 @@ async def analyze_document_revision(
         raise HTTPException(400, "document_id is required")
 
     db = get_db()
-    factory_id = user.factory_id or settings.default_factory_id
+    factory_id = resolve_factory_id(user)
 
     # Check for knowledge entities / evidence linked to this document
     ev_res = (
@@ -127,7 +128,7 @@ async def review_impact(
             "reviewed_by": user.email or user.user_id,
         })
         .eq("id", impact_id)
-        .eq("factory_id", user.factory_id or settings.default_factory_id)
+        .eq("factory_id", resolve_factory_id(user))
         .execute()
     )
     if not result.data:

@@ -13,7 +13,8 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from app.core.auth import AuthUser, get_current_user, require_role
+from app.core.auth import AuthUser, get_current_user, require_role, normalize_role
+from app.core.authz import resolve_factory_id
 from app.core.database import get_auth_client, get_db
 
 logger = logging.getLogger(__name__)
@@ -303,16 +304,17 @@ async def login_user(body: LoginRequest):
 
 
 @router.get("/users")
-async def list_users(admin: AuthUser = Depends(require_role("admin"))):
+async def list_users(user: AuthUser = Depends(require_role("reviewer", "admin"))):
     """
-    List members in the authenticated admin's factory.
+    List members in the authenticated user's factory.
     """
     db = get_db()
+    factory_id = resolve_factory_id(user)
     try:
         mem_res = (
             db.table("memberships")
             .select("user_id, role, factory_id, branch_id")
-            .eq("factory_id", admin.factory_id)
+            .eq("factory_id", factory_id)
             .execute()
         )
         members = mem_res.data or []
@@ -353,19 +355,68 @@ class RoleUpdateRequest(BaseModel):
 async def update_user_role(
     user_id: str,
     body: RoleUpdateRequest,
-    admin: AuthUser = Depends(require_role("admin")),
+    user: AuthUser = Depends(require_role("reviewer", "admin")),
 ):
     """
-    Promote or demote a user's role within the authenticated admin's factory.
-    Only 'worker' and 'supervisor' are permitted.
+    Promote or demote a user's role within the authenticated user's factory.
+    Admins can assign 'worker', 'expert', or 'supervisor'.
+    Reviewers can only assign 'worker' or 'expert' to targets currently 'worker' or 'expert'.
     """
-    if body.role not in ("worker", "supervisor"):
+    if body.role not in ("worker", "expert", "supervisor"):
         raise HTTPException(
             status_code=400,
-            detail="Invalid role: must be 'worker' or 'supervisor'",
+            detail="Invalid role: must be 'worker', 'expert', or 'supervisor'",
+        )
+
+    if user_id == user.user_id:
+        raise HTTPException(
+            status_code=400,
+            detail="You cannot change your own role",
         )
 
     db = get_db()
+    factory_id = resolve_factory_id(user)
+
+    target_res = (
+        db.table("memberships")
+        .select("id, user_id, role, factory_id, branch_id")
+        .eq("user_id", user_id)
+        .eq("factory_id", factory_id)
+        .limit(1)
+        .execute()
+    )
+    if not target_res.data:
+        raise HTTPException(
+            status_code=404,
+            detail="User not found",
+        )
+
+    target_membership = target_res.data[0]
+    target_role = target_membership.get("role")
+
+    if target_role in ("admin", "viewer"):
+        raise HTTPException(
+            status_code=403,
+            detail="Cannot modify users with admin or viewer roles",
+        )
+
+    caller_role = normalize_role(user.role)
+
+    if caller_role == "reviewer":
+        if target_role not in ("worker", "expert") or body.role not in ("worker", "expert"):
+            raise HTTPException(
+                status_code=403,
+                detail="Reviewers can only promote or demote between worker and expert",
+            )
+    elif caller_role == "admin":
+        if target_role not in ("worker", "expert", "supervisor"):
+            raise HTTPException(
+                status_code=403,
+                detail="Cannot modify target role",
+            )
+    else:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
     res = (
         db.table("memberships")
         .update({
@@ -373,22 +424,24 @@ async def update_user_role(
             "updated_at": datetime.now(timezone.utc).isoformat(),
         })
         .eq("user_id", user_id)
-        .eq("factory_id", admin.factory_id)
+        .eq("factory_id", factory_id)
         .execute()
     )
 
     if not res.data:
         raise HTTPException(
             status_code=404,
-            detail="User membership not found in this factory",
+            detail="User not found",
         )
 
     logger.info(
-        "Admin %s updated user %s role to %s in factory %s",
-        admin.user_id,
+        "User %s (%s) updated target %s role from %s to %s in factory %s",
+        user.user_id,
+        caller_role,
         user_id,
+        target_role,
         body.role,
-        admin.factory_id,
+        factory_id,
     )
 
     full_name = None
@@ -410,7 +463,7 @@ async def update_user_role(
         "user_id": updated_row.get("user_id", user_id),
         "full_name": full_name,
         "role": updated_row.get("role", body.role),
-        "factory_id": updated_row.get("factory_id", admin.factory_id),
+        "factory_id": updated_row.get("factory_id", factory_id),
         "branch_id": updated_row.get("branch_id"),
     }
 

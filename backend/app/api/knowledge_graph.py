@@ -13,6 +13,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.auth import get_current_user, UserContext
+from app.core.authz import resolve_factory_id
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +39,7 @@ async def list_entities(
     query = (
         db.table("knowledge_entities")
         .select("*")
-        .eq("factory_id", user.factory_id or settings.default_factory_id)
+        .eq("factory_id", resolve_factory_id(user))
     )
     if machine_id:
         query = query.eq("machine_id", machine_id)
@@ -59,7 +60,7 @@ async def explore_entity(
     """
     _check_enabled()
     db = get_db()
-    factory_id = user.factory_id or settings.default_factory_id
+    factory_id = resolve_factory_id(user)
 
     # Get root entity
     ent_res = (

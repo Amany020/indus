@@ -11,9 +11,10 @@ import logging
 import tempfile
 from typing import Optional
 
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
+from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
 
 from app.core.auth import AuthUser, get_current_user
+from app.core.config import settings
 from app.models.schemas import TranscriptResponse
 
 logger = logging.getLogger(__name__)
@@ -55,7 +56,7 @@ def _get_whisper():
 @router.post("/stt", response_model=TranscriptResponse)
 async def transcribe_audio(
     file: UploadFile = File(...),
-    language: Optional[str] = None,
+    language: Optional[str] = Form(None),
     user: AuthUser = Depends(get_current_user),
 ):
     """
@@ -71,6 +72,26 @@ async def transcribe_audio(
             needs_review=True,
         )
 
+    lang_clean = (language or "en").strip().lower()
+    sarvam_lang = "hi-IN" if "hi" in lang_clean else "en-IN"
+    whisper_lang = "hi" if "hi" in lang_clean else "en"
+
+    if settings.stt_provider == "sarvam":
+        from app.services.sarvam_client import transcribe as sarvam_transcribe
+
+        result = await sarvam_transcribe(
+            audio_bytes=audio_bytes,
+            content_type=file.content_type or "audio/webm",
+            language_code=sarvam_lang,
+        )
+        return TranscriptResponse(
+            transcript=result["transcript"],
+            detected_language="hi" if "hi" in sarvam_lang else "en",
+            avg_logprob=0.0,
+            no_speech_prob=0.0,
+            needs_review=False,
+        )
+
     model = _get_whisper()
 
     # Write to temp file (faster-whisper needs file path)
@@ -81,7 +102,7 @@ async def transcribe_audio(
     try:
         segments, info = model.transcribe(
             tmp_path,
-            language=language if language in ("en", "hi") else None,
+            language=whisper_lang if whisper_lang in ("en", "hi") else None,
             beam_size=5,
         )
 
@@ -144,17 +165,28 @@ async def text_to_speech(
 ):
     """
     Convert text to speech audio.
-    Routes to browser (no-op) or Bhashini based on TTS_PROVIDER config.
+    Routes to browser (no-op), Bhashini, or Sarvam based on TTS_PROVIDER config.
     """
-    from app.core.config import settings
-
     text = body.get("text", "").strip()
     language = body.get("language", "en")
 
     if not text:
         raise HTTPException(400, "text is required")
 
-    if settings.tts_provider == "bhashini":
+    if settings.tts_provider == "sarvam":
+        import base64
+        from app.services.sarvam_client import synthesize as sarvam_synthesize
+
+        sarvam_lang = "hi-IN" if str(language).lower().startswith("hi") else "en-IN"
+        wav_bytes = await sarvam_synthesize(text=text, language_code=sarvam_lang)
+        b64_audio = base64.b64encode(wav_bytes).decode("utf-8")
+        return {
+            "provider": "sarvam",
+            "text": text,
+            "language": language,
+            "audio_url": f"data:audio/wav;base64,{b64_audio}",
+        }
+    elif settings.tts_provider == "bhashini":
         from app.services.tts.bhashini import get_audio_url
         return await get_audio_url(text, language)
     else:

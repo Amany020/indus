@@ -447,15 +447,15 @@ async def _execute_query(
     try:
         tips_result = db.table("tips").select("id, tip_text, submitted_by, reviewed_at").eq(
             "machine_id", body.machine_id
-        ).eq("status", "approved").execute()
+        ).eq("factory_id", factory_id).eq("status", "approved").execute()
         expert_tips = [ExpertTipOut(
             id=t["id"],
             tip_text=t["tip_text"],
             submitted_by=t["submitted_by"],
             reviewed_at=t.get("reviewed_at"),
         ) for t in (tips_result.data or [])]
-    except Exception:
-        pass
+    except Exception as tips_err:
+        logger.warning("Failed to load approved tips for machine %s: %s", body.machine_id, tips_err)
 
     latency = int((time.time() - start) * 1000)
 

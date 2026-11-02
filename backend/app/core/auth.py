@@ -25,7 +25,7 @@ class AuthUser(BaseModel):
     """Authenticated user context."""
     user_id: str
     email: Optional[str] = None
-    role: str = "worker"  # worker | supervisor | admin | viewer
+    role: str = "worker"  # worker | supervisor | admin | viewer | expert
     factory_id: Optional[str] = None
     branch_id: Optional[str] = None
 
@@ -177,7 +177,9 @@ def require_role(*allowed_roles: str):
     async def _guard(user: AuthUser = Depends(get_current_user)) -> AuthUser:
         if settings.auth_mode == "none":
             return user
-        if normalize_role(user.role) not in allowed_roles:
+        norm_role = normalize_role(user.role)
+        is_allowed = norm_role in allowed_roles or (user.role == "expert" and "worker" in allowed_roles)
+        if not is_allowed:
             raise HTTPException(
                 status_code=403,
                 detail=f"Role '{user.role}' not authorized. Required: {allowed_roles}",

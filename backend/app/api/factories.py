@@ -8,10 +8,12 @@ from __future__ import annotations
 import uuid
 import logging
 from typing import List, Optional
-from fastapi import APIRouter, HTTPException, Header
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
 from app.core.database import get_db
+from app.core.auth import AuthUser, require_role
+from app.core.authz import resolve_factory_id
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +26,7 @@ class FactoryCreate(BaseModel):
 
 class BranchCreate(BaseModel):
     name: str
-    factory_id: str
+    factory_id: Optional[str] = None
 
 
 @router.get("/factories/")
@@ -35,7 +37,10 @@ async def list_factories():
 
 
 @router.post("/factories/")
-async def create_factory(body: FactoryCreate):
+async def create_factory(
+    body: FactoryCreate,
+    user: AuthUser = Depends(require_role("admin")),
+):
     db = get_db()
     factory_id = str(uuid.uuid4())
     result = db.table("factories").insert({
@@ -56,21 +61,36 @@ async def list_branches(factory_id: Optional[str] = None):
 
 
 @router.post("/branches/")
-async def create_branch(body: BranchCreate):
+async def create_branch(
+    body: BranchCreate,
+    user: AuthUser = Depends(require_role("admin")),
+):
     db = get_db()
+    factory_id = resolve_factory_id(user)
     branch_id = str(uuid.uuid4())
     result = db.table("branches").insert({
         "id": branch_id,
-        "factory_id": body.factory_id,
+        "factory_id": factory_id,
         "name": body.name,
     }).execute()
-    return result.data[0] if result.data else {"id": branch_id, "name": body.name, "factory_id": body.factory_id}
+    return result.data[0] if result.data else {"id": branch_id, "name": body.name, "factory_id": factory_id}
 
 
 @router.delete("/branches/{branch_id}")
-async def delete_branch(branch_id: str):
+async def delete_branch(
+    branch_id: str,
+    user: AuthUser = Depends(require_role("admin")),
+):
     db = get_db()
-    existing = db.table("branches").select("id").eq("id", branch_id).limit(1).execute()
+    factory_id = resolve_factory_id(user)
+    existing = (
+        db.table("branches")
+        .select("id, factory_id")
+        .eq("id", branch_id)
+        .eq("factory_id", factory_id)
+        .limit(1)
+        .execute()
+    )
     if not existing.data:
         raise HTTPException(status_code=404, detail="Branch not found")
 
@@ -84,7 +104,7 @@ async def delete_branch(branch_id: str):
                 detail="Branch is in use and cannot be deleted. Reassign or remove dependent machines, memberships, queries, or escalation contacts first.",
             )
 
-    db.table("branches").delete().eq("id", branch_id).execute()
+    db.table("branches").delete().eq("id", branch_id).eq("factory_id", factory_id).execute()
     logger.info("Branch deleted successfully: branch_id %s", branch_id)
     return {"status": "success", "message": "Branch deleted"}
 

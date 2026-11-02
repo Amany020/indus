@@ -44,19 +44,20 @@ def is_held(holds: list[dict], table: str, record_id: str = None) -> bool:
     return False
 
 
-def run_retention(mode: str = "dry_run"):
+def run_retention(mode: str = "dry_run", factory_id: str | None = None):
     """
     Run retention cleanup.
 
     Args:
         mode: "dry_run" (report only) or "live" (actually delete)
+        factory_id: Optional factory ID (defaults to settings.default_factory_id)
     """
     if not settings.retention_jobs_enabled:
         logger.warning("Retention jobs disabled (RETENTION_JOBS_ENABLED=false)")
         return
 
     db = get_db()
-    factory_id = settings.default_factory_id
+    factory_id = factory_id or settings.default_factory_id
     run_id = str(uuid.uuid4())
 
     logger.info("Starting retention run: mode=%s, factory=%s", mode, factory_id)

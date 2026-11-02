@@ -81,6 +81,7 @@ from app.api.change_impact import router as change_impact_router
 
 from app.api.factories import router as factories_router
 from app.api.auth import router as auth_router
+from app.api.reports import router as reports_router
 
 app.include_router(machines_router)
 app.include_router(documents_router)
@@ -96,6 +97,7 @@ app.include_router(knowledge_graph_router)
 app.include_router(change_impact_router)
 app.include_router(factories_router)
 app.include_router(auth_router)
+app.include_router(reports_router)
 
 
 

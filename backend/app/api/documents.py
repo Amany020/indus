@@ -212,23 +212,68 @@ async def get_page_url(
         raise HTTPException(500, "Could not generate page URL")
 
 
+@router.get("/{doc_id}/file-url")
+async def get_document_file_url(
+    doc_id: str,
+    user: AuthUser = Depends(require_role("reviewer", "admin")),
+):
+    factory_id = resolve_factory_id(user)
+    db = get_db()
+    doc_res = (
+        db.table("documents")
+        .select("id, filename, file_storage_key, factory_id")
+        .eq("id", doc_id)
+        .eq("factory_id", factory_id)
+        .limit(1)
+        .execute()
+    )
+    if not doc_res.data:
+        raise HTTPException(404, "Document not found")
+
+    doc = doc_res.data[0]
+    storage_key = doc.get("file_storage_key")
+    if not storage_key:
+        raise HTTPException(404, "Document file not available")
+
+    try:
+        signed = db.storage.from_(settings.supabase_bucket).create_signed_url(storage_key, 3600)
+        url = signed.get("signedURL", signed.get("signedUrl", ""))
+    except Exception as e:
+        logger.error("Signed URL creation failed for document %s: %s", doc_id, e)
+        raise HTTPException(500, "Could not generate file URL")
+
+    return {
+        "url": url,
+        "filename": doc.get("filename") or "document.pdf",
+        "content_type": "application/pdf",
+    }
+
+
 @router.delete("/{doc_id}")
 async def delete_document(
     doc_id: str,
-    x_role: str = Header("admin"),
+    user: AuthUser = Depends(require_role("admin")),
 ):
     """
     Remove a document and its chunked data from the database
     without affecting other documents or current operational data.
     """
     db = get_db()
-    
+    factory_id = resolve_factory_id(user)
+
     # 1. Fetch document to get storage key
-    doc_res = db.table("documents").select("id, file_storage_key").eq("id", doc_id).single().execute()
+    doc_res = (
+        db.table("documents")
+        .select("id, file_storage_key")
+        .eq("id", doc_id)
+        .eq("factory_id", factory_id)
+        .limit(1)
+        .execute()
+    )
     if not doc_res.data:
         raise HTTPException(404, "Document not found")
-        
-    doc = doc_res.data
+
+    doc = doc_res.data[0]
     storage_key = doc.get("file_storage_key")
 
     # 2. Delete chunked embeddings
@@ -245,7 +290,7 @@ async def delete_document(
             logger.warning("Failed to delete storage file %s: %s", storage_key, e)
 
     # 5. Delete document record
-    db.table("documents").delete().eq("id", doc_id).execute()
+    db.table("documents").delete().eq("id", doc_id).eq("factory_id", factory_id).execute()
 
     return {"status": "deleted", "doc_id": doc_id}
 

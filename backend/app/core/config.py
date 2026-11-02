@@ -62,9 +62,17 @@ class Settings(BaseSettings):
     # R5: QR scanning
     qr_scan_enabled: bool = False
 
-    # R6: TTS
-    tts_provider: str = "browser"  # "browser" | "bhashini"
+    # R6: Voice / STT / TTS
+    stt_provider: str = "whisper"  # "whisper" | "sarvam"
+    tts_provider: str = "browser"  # "browser" | "bhashini" | "sarvam"
     bhashini_api_key: str = ""
+
+    # Sarvam AI
+    sarvam_api_key: str = ""
+    sarvam_stt_model: str = "saarika:v2.5"
+    sarvam_tts_model: str = "bulbul:v2"
+    sarvam_tts_speaker: str = "anushka"
+    sarvam_tts_max_chars: int = 500
 
     # R7: SOP proposals
     sop_proposals_enabled: bool = False
