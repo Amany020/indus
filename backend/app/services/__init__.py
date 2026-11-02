@@ -1,0 +1,1 @@
+# IndustryMind services package

@@ -1,0 +1,1 @@
+# IndustryMind — TTS providers package
