@@ -126,13 +126,18 @@ async def get_current_user(request: Request) -> AuthUser:
 
     # ── Supabase JWT auth ────────────────────────────────────────────────
     if mode == "supabase":
+        token = ""
         auth_header = request.headers.get("Authorization", "")
-        if not auth_header.startswith("Bearer "):
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+        elif request.query_params.get("token"):
+            token = request.query_params.get("token")
+
+        if not token:
             raise HTTPException(
                 status_code=401,
                 detail="Authorization: Bearer <token> required",
             )
-        token = auth_header[7:]
         payload = _verify_supabase_jwt(token)
 
         user_id = payload.get("sub", "")

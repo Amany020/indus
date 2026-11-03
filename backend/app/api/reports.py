@@ -12,7 +12,7 @@ import logging
 from datetime import datetime, timezone, timedelta
 from typing import Any
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Response, HTTPException
 
 from app.core.auth import AuthUser, require_role
 from app.core.authz import resolve_factory_id
@@ -275,9 +275,9 @@ async def export_factory_summary_csv(
     # 5. Fetch approved documents per machine
     docs_res = (
         db.table("documents")
-        .select("id, machine_id, status")
+        .select("id, machine_id, approval_status")
         .eq("factory_id", factory_id)
-        .eq("status", "approved")
+        .eq("approval_status", "approved")
         .limit(5000)
         .execute()
     )
@@ -894,9 +894,9 @@ async def export_factory_summary_pdf(
 
     docs_res = (
         db.table("documents")
-        .select("id, machine_id, status")
+        .select("id, machine_id, approval_status")
         .eq("factory_id", factory_id)
-        .eq("status", "approved")
+        .eq("approval_status", "approved")
         .limit(5000)
         .execute()
     )
@@ -1188,7 +1188,12 @@ async def export_factory_summary_pdf(
         pdf_styles["footnote"]
     ))
 
-    doc.build(story)
+    try:
+        doc.build(story)
+    except Exception as e:
+        logger.exception("Failed to build factory summary PDF: %s", e)
+        raise HTTPException(status_code=500, detail=f"Failed to build factory summary PDF: {e}")
+
     today_str = now_dt.strftime("%Y%m%d")
     return Response(
         content=buf.getvalue(),

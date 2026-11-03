@@ -335,6 +335,7 @@ async def list_users(user: AuthUser = Depends(require_role("reviewer", "admin"))
                 logger.warning("Profile lookup failed for %s: %s", row.get("user_id"), prof_err)
 
             users.append({
+                "id": row["user_id"],
                 "user_id": row["user_id"],
                 "full_name": full_name,
                 "role": row["role"],
@@ -362,7 +363,8 @@ async def update_user_role(
     Admins can assign 'worker', 'expert', or 'supervisor'.
     Reviewers can only assign 'worker' or 'expert' to targets currently 'worker' or 'expert'.
     """
-    if body.role not in ("worker", "expert", "supervisor"):
+    req_role = "supervisor" if body.role == "reviewer" else body.role
+    if req_role not in ("worker", "expert", "supervisor"):
         raise HTTPException(
             status_code=400,
             detail="Invalid role: must be 'worker', 'expert', or 'supervisor'",
@@ -393,8 +395,9 @@ async def update_user_role(
 
     target_membership = target_res.data[0]
     target_role = target_membership.get("role")
+    target_norm = normalize_role(target_role)
 
-    if target_role in ("admin", "viewer"):
+    if target_norm in ("admin", "viewer"):
         raise HTTPException(
             status_code=403,
             detail="Cannot modify users with admin or viewer roles",
@@ -403,13 +406,13 @@ async def update_user_role(
     caller_role = normalize_role(user.role)
 
     if caller_role == "reviewer":
-        if target_role not in ("worker", "expert") or body.role not in ("worker", "expert"):
+        if target_norm not in ("worker", "expert") or req_role not in ("worker", "expert"):
             raise HTTPException(
                 status_code=403,
                 detail="Reviewers can only promote or demote between worker and expert",
             )
     elif caller_role == "admin":
-        if target_role not in ("worker", "expert", "supervisor"):
+        if target_norm not in ("worker", "expert", "reviewer", "supervisor"):
             raise HTTPException(
                 status_code=403,
                 detail="Cannot modify target role",
@@ -420,7 +423,7 @@ async def update_user_role(
     res = (
         db.table("memberships")
         .update({
-            "role": body.role,
+            "role": req_role,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         })
         .eq("user_id", user_id)
