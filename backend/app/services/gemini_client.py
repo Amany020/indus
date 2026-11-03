@@ -108,6 +108,20 @@ def get_selected_model() -> str:
 
 # ─── Structured JSON generation ──────────────────────────────────────────────
 
+LANGUAGE_DISPLAY_NAMES = {
+    "en": "English",
+    "hi": "Hindi (हिन्दी)",
+    "gu": "Gujarati (ગુજરાતી)",
+    "mr": "Marathi (मराठी)",
+    "ta": "Tamil (தமிழ்)",
+    "te": "Telugu (తెలుగు)",
+    "bn": "Bengali (বাংলা)",
+    "kn": "Kannada (ಕನ್ನಡ)",
+    "ml": "Malayalam (മലയാളം)",
+    "pa": "Punjabi (ਪੰਜਾਬੀ)",
+    "od": "Odia (ଓଡ଼ିଆ)",
+}
+
 SYSTEM_PROMPT = """You are IndustryMind, an evidence-first industrial assistant.
 You answer questions ONLY from the provided approved manual content.
 
@@ -117,7 +131,7 @@ RULES:
 3. If evidence is insufficient, say so — never invent steps.
 4. NEVER provide instructions to bypass, disable, or circumvent any safety device.
 5. Cite evidence by evidence_id for each step.
-6. Use the worker's language (Hindi/English/Hinglish) in your response.
+6. VERNACULAR LANGUAGE: Respond fluently and naturally in the worker's requested vernacular language (e.g. Hindi, Gujarati, Marathi, Tamil, Telugu, Bengali, Kannada, Malayalam, Punjabi, Odia, English). The summary, each step's instruction, and safety warnings MUST be composed directly in this vernacular language so the factory operator can act immediately. Keep technical model codes (e.g. CDU-7500X) and exact numeric units verbatim from the evidence.
 7. Keep steps numbered, clear, and actionable.
 8. If sources conflict, flag the conflict — do not pick one silently.
 9. Cite ALL evidence chunks that contribute any numbers, facts, or instructions to your answer — not just the primary chunk. If you mention a number or fact in the summary or steps, the corresponding evidence_id MUST appear in that step's evidence_ids array.
@@ -164,11 +178,16 @@ def generate_grounded_answer(
         risk = chunk.get("risk_level", "none")
         evidence_text += f"\n[{eid}] Source: {filename}, Page {page}, Risk: {risk}\n{text}\n"
 
-    user_prompt = f"""Worker's question ({detected_language}): {query_text}
+    lang_label = LANGUAGE_DISPLAY_NAMES.get((detected_language or "en").lower()[:2], detected_language or "English")
+    user_prompt = f"""Worker's question: {query_text}
+Target vernacular language: {lang_label} (language code: {detected_language})
 
 Available evidence from approved manuals:
 {evidence_text}
 
+MANDATORY VERNACULAR INSTRUCTION:
+Write the "summary", each step's "instruction", and all "warnings" directly in {lang_label}.
+Keep equipment model numbers, error codes, and unit specifications verbatim as stated in the evidence.
 Generate a grounded answer following the rules. Output ONLY valid JSON."""
 
     models_to_try = [model_name, "gemini-flash-lite-latest", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]
@@ -252,13 +271,18 @@ def generate_grounded_answer_with_image(
         risk = chunk.get("risk_level", "none")
         evidence_text += f"\n[{eid}] Source: {filename}, Page {page}, Risk: {risk}\n{text}\n"
 
-    user_prompt = f"""Worker's question ({detected_language}): {query_text}
+    lang_label = LANGUAGE_DISPLAY_NAMES.get((detected_language or "en").lower()[:2], detected_language or "English")
+    user_prompt = f"""Worker's question: {query_text}
+Target vernacular language: {lang_label} (language code: {detected_language})
 
 Available evidence from approved manuals:
 {evidence_text}
 
 The worker has also attached a photo related to their question. Use the image to better understand what they are asking about (e.g. identify the part, symptom, or component shown), but your answer's facts, numbers, and instructions must still come ONLY from the evidence chunks above — the image is context, not a source of factual grounding.
 
+MANDATORY VERNACULAR INSTRUCTION:
+Write the "summary", each step's "instruction", and all "warnings" directly in {lang_label}.
+Keep equipment model numbers, error codes, and unit specifications verbatim as stated in the evidence.
 Generate a grounded answer following the rules. Output ONLY valid JSON."""
 
     models_to_try = [model_name, "gemini-flash-lite-latest", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]
@@ -409,7 +433,7 @@ Rules:
 - "inferred" steps must be phrased as possibilities, not instructions
 - If evidence is insufficient, set should_escalate=true
 - NEVER bypass safety devices
-- Use {detected_language} language"""
+- Respond directly in {LANGUAGE_DISPLAY_NAMES.get((detected_language or 'en').lower()[:2], detected_language)} vernacular language"""
 
     model = genai.GenerativeModel(
         model_name=model_name,

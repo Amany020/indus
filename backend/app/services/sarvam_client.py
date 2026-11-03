@@ -21,20 +21,38 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 SARVAM_BASE_URL = "https://api.sarvam.ai"
-SUPPORTED_LANGUAGES = ("en-IN", "hi-IN")
+SUPPORTED_LANGUAGES = (
+    "en-IN", "hi-IN", "bn-IN", "gu-IN", "kn-IN",
+    "ml-IN", "mr-IN", "od-IN", "pa-IN", "ta-IN", "te-IN"
+)
+LANGUAGE_ALIASES = {
+    "en": "en-IN",
+    "hi": "hi-IN",
+    "bn": "bn-IN",
+    "gu": "gu-IN",
+    "kn": "kn-IN",
+    "ml": "ml-IN",
+    "mr": "mr-IN",
+    "od": "od-IN",
+    "or": "od-IN",
+    "pa": "pa-IN",
+    "ta": "ta-IN",
+    "te": "te-IN",
+    "as": "as-IN",
+    "ur": "ur-IN",
+}
 REQUEST_TIMEOUT_SECONDS = 30.0
 
 
 def _validate_language(language_code: str) -> str:
-    """Validate and normalize language code to en-IN or hi-IN."""
-    if language_code in ("en", "en-IN"):
-        return "en-IN"
-    if language_code in ("hi", "hi-IN"):
-        return "hi-IN"
-    raise HTTPException(
-        status_code=400,
-        detail="Unsupported language code. Only en-IN and hi-IN are supported.",
-    )
+    """Validate and normalize language code to Sarvam BCP-47 format."""
+    code = (language_code or "en-IN").strip().lower()
+    if code in LANGUAGE_ALIASES:
+        return LANGUAGE_ALIASES[code]
+    for supported in SUPPORTED_LANGUAGES:
+        if code == supported.lower():
+            return supported
+    return "en-IN" 
 
 
 def _get_api_key() -> str:
@@ -277,4 +295,66 @@ async def synthesize(text: str, language_code: str = "en-IN") -> bytes:
     except Exception as e:
         logger.error("Sarvam TTS unexpected error: %s", type(e).__name__)
         raise HTTPException(status_code=500, detail=f"TTS synthesis failed: {e}")
+
+async def translate(
+    text: str,
+    target_language_code: str,
+    source_language_code: str = "auto",
+    model: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Translate text using Sarvam AI /translate endpoint.
+    Supports English and 10+ major Indian languages without Bhashini.
+    """
+    text = text.strip()
+    if not text:
+        return {
+            "translated_text": "",
+            "source_language_code": source_language_code,
+            "target_language_code": target_language_code,
+            "provider": "sarvam",
+        }
+
+    api_key = _get_api_key()
+    norm_target = _validate_language(target_language_code)
+
+    norm_source = "auto"
+    if source_language_code and source_language_code.lower() != "auto":
+        norm_source = _validate_language(source_language_code)
+
+    payload = {
+        "input": text,
+        "source_language_code": norm_source,
+        "target_language_code": norm_target,
+        "model": model or getattr(settings, "sarvam_translate_model", "mayura:v1"),
+    }
+
+    headers = {
+        "api-subscription-key": api_key,
+        "Content-Type": "application/json",
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SECONDS) as client:
+            response = await client.post(
+                f"{SARVAM_BASE_URL}/translate",
+                json=payload,
+                headers=headers,
+            )
+            if response.status_code != 200:
+                logger.error("Sarvam Translation failed with HTTP %s: %s", response.status_code, response.text)
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail=f"Sarvam Translation error: {response.text}",
+                )
+            data = response.json()
+            return {
+                "translated_text": data.get("translated_text", ""),
+                "source_language_code": data.get("source_language_code", norm_source),
+                "target_language_code": norm_target,
+                "provider": "sarvam",
+            }
+    except httpx.RequestError as e:
+        logger.error("Sarvam Translation request error: %s", type(e).__name__)
+        raise HTTPException(status_code=503, detail="Sarvam Translation service unreachable.")
 

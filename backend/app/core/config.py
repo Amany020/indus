@@ -64,15 +64,16 @@ class Settings(BaseSettings):
 
     # R6: Voice / STT / TTS
     stt_provider: str = "whisper"  # "whisper" | "sarvam"
-    tts_provider: str = "browser"  # "browser" | "bhashini" | "sarvam"
+    tts_provider: str = "browser"  # "browser" | "sarvam"
     bhashini_api_key: str = ""
 
     # Sarvam AI
-    sarvam_api_key: str = ""
+    sarvam_api_key: str = "sk_j7twmz3k_3RaIqhFUNQ92KTl1eviyO1tH"
     sarvam_stt_model: str = "saarika:v2.5"
     sarvam_tts_model: str = "bulbul:v2"
     sarvam_tts_speaker: str = "anushka"
     sarvam_tts_max_chars: int = 500
+    sarvam_translate_model: str = "mayura:v1"
 
     # R7: SOP proposals
     sop_proposals_enabled: bool = False

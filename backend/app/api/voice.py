@@ -73,7 +73,8 @@ async def transcribe_audio(
         )
 
     lang_clean = (language or "en").strip().lower()
-    sarvam_lang = "hi-IN" if "hi" in lang_clean else "en-IN"
+    from app.services.sarvam_client import _validate_language
+    sarvam_lang = _validate_language(lang_clean)
     whisper_lang = "hi" if "hi" in lang_clean else "en"
 
     if settings.stt_provider == "sarvam":
@@ -175,9 +176,9 @@ async def text_to_speech(
 
     if settings.tts_provider == "sarvam":
         import base64
-        from app.services.sarvam_client import synthesize as sarvam_synthesize
+        from app.services.sarvam_client import synthesize as sarvam_synthesize, _validate_language
 
-        sarvam_lang = "hi-IN" if str(language).lower().startswith("hi") else "en-IN"
+        sarvam_lang = _validate_language(language)
         wav_bytes = await sarvam_synthesize(text=text, language_code=sarvam_lang)
         b64_audio = base64.b64encode(wav_bytes).decode("utf-8")
         return {
@@ -186,9 +187,6 @@ async def text_to_speech(
             "language": language,
             "audio_url": f"data:audio/wav;base64,{b64_audio}",
         }
-    elif settings.tts_provider == "bhashini":
-        from app.services.tts.bhashini import get_audio_url
-        return await get_audio_url(text, language)
     else:
         from app.services.tts.browser import get_audio_url
         return get_audio_url(text, language)
@@ -196,17 +194,44 @@ async def text_to_speech(
 
 @router.get("/voice/languages")
 async def list_languages():
-    """Return supported languages for voice I/O."""
+    """Return supported languages for voice I/O and Sarvam translation."""
     return [
-        {"code": "en", "name": "English", "tts": True, "stt": True},
-        {"code": "hi", "name": "Hindi", "tts": True, "stt": True},
-        {"code": "ta", "name": "Tamil", "tts": True, "stt": False},
-        {"code": "te", "name": "Telugu", "tts": True, "stt": False},
-        {"code": "bn", "name": "Bengali", "tts": True, "stt": False},
-        {"code": "mr", "name": "Marathi", "tts": True, "stt": False},
-        {"code": "gu", "name": "Gujarati", "tts": True, "stt": False},
-        {"code": "kn", "name": "Kannada", "tts": True, "stt": False},
-        {"code": "ml", "name": "Malayalam", "tts": True, "stt": False},
-        {"code": "pa", "name": "Punjabi", "tts": True, "stt": False},
+        {"code": "en", "name": "English", "tag": "en-IN", "tts": True, "stt": True, "translate": True},
+        {"code": "hi", "name": "Hindi", "tag": "hi-IN", "tts": True, "stt": True, "translate": True},
+        {"code": "gu", "name": "Gujarati", "tag": "gu-IN", "tts": True, "stt": True, "translate": True},
+        {"code": "mr", "name": "Marathi", "tag": "mr-IN", "tts": True, "stt": True, "translate": True},
+        {"code": "ta", "name": "Tamil", "tag": "ta-IN", "tts": True, "stt": True, "translate": True},
+        {"code": "te", "name": "Telugu", "tag": "te-IN", "tts": True, "stt": True, "translate": True},
+        {"code": "bn", "name": "Bengali", "tag": "bn-IN", "tts": True, "stt": True, "translate": True},
+        {"code": "kn", "name": "Kannada", "tag": "kn-IN", "tts": True, "stt": True, "translate": True},
+        {"code": "ml", "name": "Malayalam", "tag": "ml-IN", "tts": True, "stt": True, "translate": True},
+        {"code": "pa", "name": "Punjabi", "tag": "pa-IN", "tts": True, "stt": True, "translate": True},
+        {"code": "od", "name": "Odia", "tag": "od-IN", "tts": True, "stt": True, "translate": True},
     ]
+
+from pydantic import BaseModel
+
+class TranslateRequest(BaseModel):
+    text: str
+    target_language: str = "hi"
+    source_language: Optional[str] = "auto"
+
+@router.post("/translate")
+@router.post("/voice/translate")
+async def translate_text(
+    body: TranslateRequest,
+    user: AuthUser = Depends(get_current_user),
+):
+    """
+    Translate text using Sarvam AI exclusively across multiple Indian languages.
+    Bhashini is strictly not used.
+    """
+    from app.services.sarvam_client import translate as sarvam_translate
+
+    result = await sarvam_translate(
+        text=body.text,
+        target_language_code=body.target_language,
+        source_language_code=body.source_language or "auto",
+    )
+    return result
 
