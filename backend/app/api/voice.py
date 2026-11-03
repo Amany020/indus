@@ -73,9 +73,10 @@ async def transcribe_audio(
         )
 
     lang_clean = (language or "en").strip().lower()
-    from app.services.sarvam_client import _validate_language
-    sarvam_lang = _validate_language(lang_clean)
-    whisper_lang = "hi" if "hi" in lang_clean else "en"
+    from app.services.translation import resolve_language, LANGUAGE_TABLE
+    short_lang = resolve_language(lang_clean)
+    sarvam_lang = LANGUAGE_TABLE[short_lang]["sarvam_code"]
+    whisper_lang = "hi" if "hi" in short_lang else "en"
 
     if settings.stt_provider == "sarvam":
         from app.services.sarvam_client import transcribe as sarvam_transcribe
@@ -87,7 +88,7 @@ async def transcribe_audio(
         )
         return TranscriptResponse(
             transcript=result["transcript"],
-            detected_language="hi" if "hi" in sarvam_lang else "en",
+            detected_language=short_lang,
             avg_logprob=0.0,
             no_speech_prob=0.0,
             needs_review=False,
@@ -166,7 +167,8 @@ async def text_to_speech(
 ):
     """
     Convert text to speech audio.
-    Routes to browser (no-op), Bhashini, or Sarvam based on TTS_PROVIDER config.
+    Accepts short code (en, hi, ta...), maps to Sarvam code, rejects disabled/unknown with 400.
+    Truncates at sentence boundary when exceeding sarvam_tts_max_chars.
     """
     text = body.get("text", "").strip()
     language = body.get("language", "en")
@@ -174,39 +176,69 @@ async def text_to_speech(
     if not text:
         raise HTTPException(400, "text is required")
 
+    from app.services.translation import is_language_enabled, resolve_language, LANGUAGE_TABLE
+    short_lang = resolve_language(language)
+    if not is_language_enabled(short_lang):
+        raise HTTPException(400, f"Language '{language}' is not supported or not enabled")
+
+    lang_entry = LANGUAGE_TABLE[short_lang]
+    sarvam_lang = lang_entry["sarvam_code"]
+
+    truncated = False
+    max_chars = settings.sarvam_tts_max_chars or 500
+    if len(text) > max_chars:
+        cut_text = text[:max_chars]
+        matches = list(re.finditer(r"[\.\?\!\।\n]\s*", cut_text))
+        if matches:
+            last_end = matches[-1].end()
+            text = text[:last_end].strip()
+        else:
+            last_space = cut_text.rfind(" ")
+            if last_space > 0:
+                text = cut_text[:last_space].strip()
+            else:
+                text = cut_text.strip()
+        truncated = True
+
     if settings.tts_provider == "sarvam":
         import base64
-        from app.services.sarvam_client import synthesize as sarvam_synthesize, _validate_language
+        from app.services.sarvam_client import synthesize as sarvam_synthesize
 
-        sarvam_lang = _validate_language(language)
         wav_bytes = await sarvam_synthesize(text=text, language_code=sarvam_lang)
         b64_audio = base64.b64encode(wav_bytes).decode("utf-8")
         return {
             "provider": "sarvam",
             "text": text,
-            "language": language,
+            "language": short_lang,
+            "sarvam_language": sarvam_lang,
             "audio_url": f"data:audio/wav;base64,{b64_audio}",
+            "truncated": truncated,
         }
     else:
         from app.services.tts.browser import get_audio_url
-        return get_audio_url(text, language)
+        res = get_audio_url(text, short_lang)
+        if isinstance(res, dict):
+            res["truncated"] = truncated
+        return res
 
 
 @router.get("/voice/languages")
 async def list_languages():
-    """Return supported languages for voice I/O and Sarvam translation."""
+    """Return enabled languages for voice I/O and Sarvam translation."""
+    from app.services.translation import get_enabled_languages
+    enabled = get_enabled_languages()
     return [
-        {"code": "en", "name": "English", "tag": "en-IN", "tts": True, "stt": True, "translate": True},
-        {"code": "hi", "name": "Hindi", "tag": "hi-IN", "tts": True, "stt": True, "translate": True},
-        {"code": "gu", "name": "Gujarati", "tag": "gu-IN", "tts": True, "stt": True, "translate": True},
-        {"code": "mr", "name": "Marathi", "tag": "mr-IN", "tts": True, "stt": True, "translate": True},
-        {"code": "ta", "name": "Tamil", "tag": "ta-IN", "tts": True, "stt": True, "translate": True},
-        {"code": "te", "name": "Telugu", "tag": "te-IN", "tts": True, "stt": True, "translate": True},
-        {"code": "bn", "name": "Bengali", "tag": "bn-IN", "tts": True, "stt": True, "translate": True},
-        {"code": "kn", "name": "Kannada", "tag": "kn-IN", "tts": True, "stt": True, "translate": True},
-        {"code": "ml", "name": "Malayalam", "tag": "ml-IN", "tts": True, "stt": True, "translate": True},
-        {"code": "pa", "name": "Punjabi", "tag": "pa-IN", "tts": True, "stt": True, "translate": True},
-        {"code": "od", "name": "Odia", "tag": "od-IN", "tts": True, "stt": True, "translate": True},
+        {
+            "code": lang["code"],
+            "name": lang["name"],
+            "sarvam_code": lang["sarvam_code"],
+            "browser_code": lang["browser_code"],
+            "tag": lang["browser_code"],
+            "tts": True,
+            "stt": True,
+            "translate": True,
+        }
+        for lang in enabled
     ]
 
 from pydantic import BaseModel

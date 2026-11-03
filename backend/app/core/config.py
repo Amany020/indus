@@ -75,6 +75,11 @@ class Settings(BaseSettings):
     sarvam_tts_max_chars: int = 500
     sarvam_translate_model: str = "mayura:v1"
 
+    # Translation settings
+    supported_languages: str = "en,hi,bn,ta,te,mr,gu,kn,ml,pa,od"
+    translation_model: str = ""
+    translation_timeout_seconds: int = 12
+
     # R7: SOP proposals
     sop_proposals_enabled: bool = False
 
