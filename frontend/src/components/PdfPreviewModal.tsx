@@ -95,16 +95,8 @@ export default function PdfPreviewModal({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-2.5 px-5 py-3 border-t border-[#E5E0D8] bg-[#FAF8F5]">
-          <button
-            type="button"
-            onClick={onClose}
-            className="min-h-[48px] px-4 py-2 bg-[#EDE8E0] hover:bg-[#E5E0D8] text-[#1C2B29] border border-[#E5E0D8] rounded-xl text-xs font-semibold inline-flex items-center gap-2 transition"
-          >
-            <X className="w-4 h-4" />
-            <span>Cancel</span>
-          </button>
-          {onConfirm && (
+        {onConfirm && (
+          <div className="flex items-center justify-end gap-2.5 px-5 py-3 border-t border-[#E5E0D8] bg-[#FAF8F5]">
             <button
               type="button"
               onClick={onConfirm}
@@ -114,8 +106,8 @@ export default function PdfPreviewModal({
               <Upload className="w-4 h-4" />
               <span>{confirmLoading ? "Uploading..." : confirmLabel}</span>
             </button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );

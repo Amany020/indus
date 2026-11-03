@@ -159,9 +159,7 @@ export default function AuthModal({ isOpen, onClose }: { isOpen: boolean; onClos
             ✕
           </button>
           <div className="flex items-center gap-2 mb-2">
-            <span className="w-7 h-7 rounded-lg bg-emerald-500 flex items-center justify-center font-bold text-black text-sm">
-              IM
-            </span>
+            <img src="/industrymind_logo.png" alt="IndustryMind Logo" className="w-7 h-7 object-contain" />
             <span className="text-xs uppercase tracking-widest text-emerald-400 font-mono">
               IndustryMind OS
             </span>

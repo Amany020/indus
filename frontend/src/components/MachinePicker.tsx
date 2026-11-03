@@ -106,6 +106,21 @@ export default function MachinePicker() {
           >
             // INTERROGATING FACTORY MACHINE REGISTRY...
           </div>
+        ) : machines.length === 0 ? (
+          <div
+            style={{
+              gridColumn: "1 / -1",
+              textAlign: "center",
+              padding: 40,
+              background: "var(--color-surface)",
+              border: "1px dashed var(--color-border)",
+              borderRadius: "4px",
+              color: "var(--color-text-secondary)",
+              fontSize: 13,
+            }}
+          >
+            No active machines found. Please register equipment in the Admin portal.
+          </div>
         ) : (
           machines.map((m, i) => (
             <motion.button

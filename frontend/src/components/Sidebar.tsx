@@ -30,9 +30,7 @@ export default function Sidebar() {
       <div>
         <div className="p-5 border-b border-[#1E3832] flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-600 flex items-center justify-center font-bold text-gray-950 text-base shadow-md shadow-emerald-900/40">
-              IM
-            </div>
+            <img src="/industrymind_logo.png" alt="IndustryMind Logo" className="w-9 h-9 object-contain" />
             <div>
               <div className="font-bold tracking-tight text-sm text-white flex items-center gap-1.5">
                 Industry<span className="text-emerald-400 font-extrabold">Mind</span>
