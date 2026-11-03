@@ -1,6 +1,8 @@
 import { cookies } from "next/headers";
 
-const BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+const BASE_URL =
+  process.env.NEXT_PUBLIC_BACKEND_URL ||
+  (process.env.VERCEL ? "https://indus-38td.onrender.com" : "http://localhost:8000");
 
 export interface ServerUser {
   user_id: string;

@@ -3,7 +3,11 @@
  * Single module wrapping all backend calls.
  */
 
-const BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+const BASE_URL =
+  process.env.NEXT_PUBLIC_BACKEND_URL ||
+  (typeof window !== "undefined" && window.location.hostname.includes("vercel.app")
+    ? "https://indus-38td.onrender.com"
+    : "http://localhost:8000");
 
 const TOKEN_KEY = "indus_token";
 
