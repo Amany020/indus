@@ -117,6 +117,9 @@ class QueryResponse(BaseModel):
     evidence_pack: List[EvidenceMeta] = []
     expert_knowledge: List[ExpertTipOut] = []
     detected_language: str = "en"
+    answer_language: str = "en"
+    answer_en: Optional[str] = None
+    translation_failed: bool = False
     latency_ms: int = 0
     demo_cached: bool = False
 
