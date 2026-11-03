@@ -107,6 +107,8 @@ app.include_router(reports_router)
 
 
 
+@app.get("/")
+@app.head("/")
 @app.get("/health")
 async def health():
     return {
