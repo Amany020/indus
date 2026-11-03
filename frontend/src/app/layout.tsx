@@ -4,7 +4,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "IndustryMind — Evidence-First Industrial Assistant",
   description:
-    "Multimodal GenAI assistant for industrial SOPs, manuals and expert knowledge. Hackathon demo for Indux 5.0-2026.",
+    "Multimodal GenAI assistant for industrial SOPs, manuals and expert knowledge. Industrial Assistant.",
 };
 
 import { AppProvider } from "@/lib/context";

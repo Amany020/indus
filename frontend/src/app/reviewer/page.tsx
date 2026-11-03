@@ -7,6 +7,7 @@ import { api, type Tip, type SopProposal, type AnalyticsSummary, type AnalyticsB
 import { roleLabel } from "@/lib/roles";
 import TicketThread from "@/components/TicketThread";
 import PdfPreviewModal from "@/components/PdfPreviewModal";
+import ProfileModal from "@/components/ProfileModal";
 import {
   Home,
   Layers,
@@ -32,6 +33,8 @@ import {
   MessageSquare,
   RotateCw,
   Download,
+  LogOut,
+  Settings,
 } from "lucide-react";
 
 function getDocStatusBadge(status: string) {
@@ -60,6 +63,7 @@ export default function ReviewerPage() {
 
   const [activeNav, setActiveNav] = useState<"home" | "queries" | "tips" | "proposals" | "employees" | "documents" | "reports">("home");
   const [showBranchMenu, setShowBranchMenu] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
 
   // Queries queue
   const [queryFilter, setQueryFilter] = useState<"all" | "high" | "misanswered" | "resolved">("all");
@@ -641,15 +645,168 @@ export default function ReviewerPage() {
   });
 
   return (
-    <div className="min-h-screen bg-[#FAF8F5] text-[#1C2B29] font-sans flex justify-center pb-20">
-      <div className="w-full max-w-md bg-[#FAF8F5] min-h-screen flex flex-col relative shadow-sm border-x border-[#EAE5DC]">
+    <div className="min-h-screen bg-[#FAF8F5] text-[#1C2B29] font-sans flex justify-center pb-20 lg:pb-0">
+      {/* Outer Responsive Wrapper: Mobile (max-w-md) & Desktop (w-full max-w-7xl flex-row) */}
+      <div className="w-full max-w-md lg:max-w-7xl bg-[#FAF8F5] min-h-screen flex flex-col lg:flex-row relative shadow-sm border-x border-[#EAE5DC] lg:border-x-0">
+        {/* ─── DESKTOP LEFT SIDEBAR (hidden on mobile) ──────────────── */}
+        <aside className="hidden lg:flex flex-col w-64 shrink-0 bg-white border-r border-[#EDE8E0] min-h-screen p-5 space-y-6 sticky top-0 h-screen overflow-y-auto z-40">
+          {/* Logo & Brand Header */}
+          <div className="flex items-center gap-3">
+            <img src="/industrymind_logo.png" alt="IndustryMind Logo" className="w-8 h-8 object-contain" />
+            <div>
+              <span className="font-bold text-base tracking-tight text-[#1C2B29] block">
+                IndustryMind
+              </span>
+              <span className="text-[10px] text-[#5C6460] font-medium block">
+                Reviewer Portal
+              </span>
+            </div>
+          </div>
+
+          {/* Active Reviewer Card */}
+          <div className="p-3 bg-[#FAF8F5] rounded-2xl border border-[#EDE8E0] space-y-1">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-full bg-[#1C2B29] text-white flex items-center justify-center text-xs font-bold">
+                {(user?.full_name || "R")[0]}
+              </div>
+              <div className="min-w-0 flex-1">
+                <span className="text-xs font-bold text-[#1C2B29] truncate block">
+                  {user?.full_name || "Reviewer"}
+                </span>
+                <span className="text-[10px] text-[#5C6460] block capitalize">
+                  Quality Supervisor
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Desktop Navigation Links */}
+          <nav className="flex-1 space-y-1">
+            <button
+              type="button"
+              onClick={() => setActiveNav("home")}
+              className={`w-full min-h-[44px] px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition text-left cursor-pointer ${
+                activeNav === "home"
+                  ? "bg-[#1C2B29] text-white shadow-xs"
+                  : "text-[#5C6460] hover:text-[#1C2B29] hover:bg-[#FAF8F5]"
+              }`}
+            >
+              <Home className="w-4 h-4 shrink-0" />
+              <span>Overview</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveNav("queries")}
+              className={`w-full min-h-[44px] px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition text-left cursor-pointer ${
+                activeNav === "queries"
+                  ? "bg-[#1C2B29] text-white shadow-xs"
+                  : "text-[#5C6460] hover:text-[#1C2B29] hover:bg-[#FAF8F5]"
+              }`}
+            >
+              <Layers className="w-4 h-4 shrink-0" />
+              <span>Escalations Queue</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveNav("tips")}
+              className={`w-full min-h-[44px] px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition text-left cursor-pointer ${
+                activeNav === "tips"
+                  ? "bg-[#1C2B29] text-white shadow-xs"
+                  : "text-[#5C6460] hover:text-[#1C2B29] hover:bg-[#FAF8F5]"
+              }`}
+            >
+              <Lightbulb className="w-4 h-4 shrink-0" />
+              <span>Field Tips Review</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveNav("proposals")}
+              className={`w-full min-h-[44px] px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition text-left cursor-pointer ${
+                activeNav === "proposals"
+                  ? "bg-[#1C2B29] text-white shadow-xs"
+                  : "text-[#5C6460] hover:text-[#1C2B29] hover:bg-[#FAF8F5]"
+              }`}
+            >
+              <ClipboardList className="w-4 h-4 shrink-0" />
+              <span>SOP Proposals</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveNav("employees")}
+              className={`w-full min-h-[44px] px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition text-left cursor-pointer ${
+                activeNav === "employees"
+                  ? "bg-[#1C2B29] text-white shadow-xs"
+                  : "text-[#5C6460] hover:text-[#1C2B29] hover:bg-[#FAF8F5]"
+              }`}
+            >
+              <Users className="w-4 h-4 shrink-0" />
+              <span>Team Roster</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveNav("documents")}
+              className={`w-full min-h-[44px] px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition text-left cursor-pointer ${
+                activeNav === "documents"
+                  ? "bg-[#1C2B29] text-white shadow-xs"
+                  : "text-[#5C6460] hover:text-[#1C2B29] hover:bg-[#FAF8F5]"
+              }`}
+            >
+              <FileText className="w-4 h-4 shrink-0" />
+              <span>Manuals & SOPs</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveNav("reports")}
+              className={`w-full min-h-[44px] px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition text-left cursor-pointer ${
+                activeNav === "reports"
+                  ? "bg-[#1C2B29] text-white shadow-xs"
+                  : "text-[#5C6460] hover:text-[#1C2B29] hover:bg-[#FAF8F5]"
+              }`}
+            >
+              <BarChart2 className="w-4 h-4 shrink-0" />
+              <span>Operations Reports</span>
+            </button>
+          </nav>
+
+          {/* Bottom Sidebar Action Items */}
+          <div className="pt-4 border-t border-[#EDE8E0] space-y-2">
+            <button
+              type="button"
+              onClick={() => setShowProfileModal(true)}
+              className="w-full min-h-[44px] px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-2.5 text-[#5C6460] hover:text-[#1C2B29] hover:bg-[#FAF8F5] transition cursor-pointer"
+            >
+              <Settings className="w-4 h-4" />
+              <span>Reviewer Settings</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (confirm("Log out of Reviewer portal?")) {
+                  logout();
+                  router.push("/login");
+                }
+              }}
+              className="w-full min-h-[44px] px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-2.5 text-[#5C6460] hover:text-[#D95A2B] hover:bg-[#FAF8F5] transition cursor-pointer"
+            >
+              <LogOut className="w-4 h-4" />
+              <span>Sign Out</span>
+            </button>
+          </div>
+        </aside>
+
+        {/* ─── MAIN CONTENT VIEWPORT ─────────────────────────────────── */}
+        <div className="flex-1 min-w-0 flex flex-col min-h-screen">
         {/* Top Header Bar */}
         <header className="sticky top-0 z-30 bg-[#FAF8F5]/90 backdrop-blur-md px-4 pt-3 pb-2 border-b border-[#EAE5DC]">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-[#D95A2B] text-white flex items-center justify-center font-bold text-sm shadow-sm">
-                IM
-              </div>
+              <img src="/industrymind_logo.png" alt="IndustryMind Logo" className="w-8 h-8 object-contain" />
               <span className="font-bold text-lg tracking-tight text-[#1C2B29]">
                 IndustryMind
               </span>
@@ -670,14 +827,9 @@ export default function ReviewerPage() {
 
               <button
                 type="button"
-                onClick={() => {
-                  if (confirm("Log out of Reviewer portal?")) {
-                    logout();
-                    router.push("/login");
-                  }
-                }}
-                title="Log out"
-                className="w-8 h-8 rounded-full bg-[#1C2B29] text-white flex items-center justify-center text-xs font-semibold hover:bg-red-700 transition"
+                onClick={() => setShowProfileModal(true)}
+                title="Profile & Settings"
+                className="w-8 h-8 rounded-full bg-[#1C2B29] text-white flex items-center justify-center text-xs font-semibold hover:bg-[#D95A2B] transition cursor-pointer"
               >
                 R
               </button>
@@ -2583,8 +2735,8 @@ export default function ReviewerPage() {
                               );
         })()}
 
-                              {/* ─── BOTTOM DOCK NAVIGATION ───────────────────────────────── */}
-                              <nav className="fixed bottom-0 left-0 right-0 z-30 max-w-md mx-auto bg-white/95 backdrop-blur-md border-t border-[#EDE8E0] px-1 sm:px-3 py-2 flex items-center justify-around">
+                              {/* ─── BOTTOM DOCK NAVIGATION (mobile only) ───────────────── */}
+                              <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-30 max-w-md mx-auto bg-white/95 backdrop-blur-md border-t border-[#EDE8E0] px-1 sm:px-3 py-2 flex items-center justify-around">
                                 <button
                                   type="button"
                                   onClick={() => setActiveNav("home")}
@@ -2655,6 +2807,7 @@ export default function ReviewerPage() {
                                   <span className="truncate max-w-full">Reports</span>
                                 </button>
                               </nav>
+                              </div>
 
                               {/* PDF Preview Modal */}
                               {viewDocModalData && (
@@ -2665,6 +2818,12 @@ export default function ReviewerPage() {
                                   onClose={() => setViewDocModalData(null)}
                                 />
                               )}
+
+                              {/* Profile & Settings Modal */}
+                              <ProfileModal
+                                isOpen={showProfileModal}
+                                onClose={() => setShowProfileModal(false)}
+                              />
                             </div>
     </div>
                     );

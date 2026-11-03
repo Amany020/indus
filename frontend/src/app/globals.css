@@ -3,46 +3,46 @@
 /* ─── IndustryMind Precision Industrial Design System ─────────────────── */
 
 @theme inline {
-  /* Canvas & Surfaces */
-  --color-bg-base: #F6F3EE;
+  /* Canvas & Surfaces (Architectural Light Mode) */
+  --color-bg-base: #F8F9FA;
   --color-surface: #FFFFFF;
-  --color-surface-hover: #FAF8F5;
-  --color-ink: #1C2B29;
+  --color-surface-hover: #F1F3F5;
+  --color-ink: #18181B;
 
-  /* Primary Brand / Telemetry (Teal) */
-  --color-primary: #26524D;
-  --color-primary-hover: #1C3F3B;
-  --color-primary-tint: #E5EDEB;
-  --color-primary-light: #E5EDEB;
+  /* Primary Brand / Precision Industrial (High-Precision Teal & Slate) */
+  --color-primary: #0D9488;
+  --color-primary-hover: #0F766E;
+  --color-primary-tint: #F0FDFA;
+  --color-primary-light: #CCFBF1;
 
   /* Structural Borders */
-  --color-border: #E2DCCE;
-  --color-border-hover: #CFC8B8;
+  --color-border: #E4E4E7;
+  --color-border-hover: #D4D4D8;
 
   /* Typography / Text Hierarchy */
-  --color-text-secondary: #5C6460;
-  --color-text-muted: #6B665C;
+  --color-text-secondary: #52525B;
+  --color-text-muted: #71717A;
 
-  /* Status Tokens (Strictly Scoped) */
-  /* Supported Status -> Sage */
-  --color-sage: #6E8862;
-  --color-sage-text: #44603B;
-  --color-sage-light: #E6EDE2;
+  /* Status Tokens (Strictly Scoped, Clean Daylight Tones) */
+  /* Supported Status -> Precision Emerald */
+  --color-sage: #16A34A;
+  --color-sage-text: #15803D;
+  --color-sage-light: #F0FDF4;
 
-  /* Limited Status -> Amber */
-  --color-amber: #B8762F;
-  --color-amber-text: #8A5300;
-  --color-amber-light: #F6EBDA;
+  /* Limited Status -> Industrial Warm Amber */
+  --color-amber: #D97706;
+  --color-amber-text: #B45309;
+  --color-amber-light: #FFFBEB;
 
-  /* Restricted Status -> Terracotta */
-  --color-terracotta: #A85A42;
-  --color-terracotta-text: #8F4A34;
-  --color-terracotta-light: #F2E4DF;
+  /* Restricted Status -> Signal Crimson */
+  --color-terracotta: #DC2626;
+  --color-terracotta-text: #B91C1C;
+  --color-terracotta-light: #FEF2F2;
 
-  /* Sidebar / Nav Structure (Derived from --color-ink #1C2B29) */
-  --color-nav-bg: #111A19;
-  --color-nav-border: #20302E;
-  --color-nav-icon: #839995;
+  /* Sidebar / Nav Structure (Architectural Slate) */
+  --color-nav-bg: #18181B;
+  --color-nav-border: #27272A;
+  --color-nav-icon: #A1A1AA;
   --color-nav-icon-active: #FFFFFF;
 
   /* Typography */
@@ -50,23 +50,23 @@
   --font-mono: "JetBrains Mono", monospace;
   --font-hindi: "Noto Sans Devanagari", system-ui, sans-serif;
 
-  /* Radii (Strictly Non-Pill) */
-  --radius-xs: 3px;
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
-  --radius-xl: 18px;
+  /* Radii */
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
 
-  /* Brand Orange / Terracotta Accent from screenshots */
-  --color-brand-orange: #D95A2B;
-  --color-brand-orange-hover: #C04A1F;
-  --color-brand-orange-light: #FDF2ED;
-  --color-brand-orange-tint: #FFF6F2;
+  /* Brand Orange / Iconic Industrial Persimmon Accent */
+  --color-brand-orange: #FF5E1E;
+  --color-brand-orange-hover: #E04D12;
+  --color-brand-orange-light: #FFF3ED;
+  --color-brand-orange-tint: #FFE8DE;
 
-  /* Elevation (Hover/Active Only - No Unconditional Shadows) */
-  --shadow-card: none;
-  --shadow-card-hover: 0 4px 12px rgba(28, 43, 41, 0.08);
-  --shadow-modal: 0 16px 32px rgba(28, 43, 41, 0.16);
+  /* Elevation */
+  --shadow-card: 0 1px 3px 0 rgba(0, 0, 0, 0.04);
+  --shadow-card-hover: 0 10px 25px -5px rgba(0, 0, 0, 0.06), 0 8px 10px -6px rgba(0, 0, 0, 0.02);
+  --shadow-modal: 0 20px 40px -15px rgba(0, 0, 0, 0.15);
 }
 
 /* ─── Base Styles ───────────────────────────────────────────────────────── */
@@ -126,7 +126,7 @@
   /* 2. Reusable Utility: Subtle Dot-Grid Pattern */
   .bg-dot-grid {
     background-color: var(--color-bg-base);
-    background-image: radial-gradient(#D8D2C4 1px, transparent 1px);
+    background-image: radial-gradient(#CBD5E1 1px, transparent 1px);
     background-size: 20px 20px;
     background-position: 0 0;
   }

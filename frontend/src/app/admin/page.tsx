@@ -39,6 +39,8 @@ function getDocStatusBadge(status: string) {
   }
 }
 
+import ProfileModal from "@/components/ProfileModal";
+import PdfPreviewModal from "@/components/PdfPreviewModal";
 import {
   Home,
   Building2,
@@ -58,6 +60,8 @@ import {
   Plus,
   X,
   Upload,
+  LogOut,
+  Settings,
 } from "lucide-react";
 
 export default function AdminPage() {
@@ -66,6 +70,7 @@ export default function AdminPage() {
 
   const [activeNav, setActiveNav] = useState<"home" | "branch" | "documents" | "team" | "reports">("home");
   const [showBranchMenu, setShowBranchMenu] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
   const [docFilter, setDocFilter] = useState<"all" | "pending" | "approved" | "rejected">("pending");
 
   // Branches state
@@ -181,6 +186,28 @@ export default function AdminPage() {
   const [docActionSubmitting, setDocActionSubmitting] = useState(false);
   const [docActionError, setDocActionError] = useState<string | null>(null);
 
+  // PDF Document Preview
+  const [viewDocModalData, setViewDocModalData] = useState<{ title: string; src: string } | null>(null);
+  const [viewLoadingDocId, setViewLoadingDocId] = useState<string | null>(null);
+  const [viewDocError, setViewDocError] = useState<string | null>(null);
+
+  const handleViewDoc = async (docId?: string, title?: string) => {
+    if (!docId) return;
+    setViewLoadingDocId(docId);
+    setViewDocError(null);
+    try {
+      const res = await api.getDocumentFileUrl(docId);
+      setViewDocModalData({
+        title: res.filename || title || "Document PDF",
+        src: res.url,
+      });
+    } catch (err: any) {
+      setViewDocError(err?.message || "Failed to load document preview");
+    } finally {
+      setViewLoadingDocId(null);
+    }
+  };
+
   // Genuine documents list from DB
   const [documents, setDocuments] = useState<Array<{
     id: string;
@@ -238,7 +265,7 @@ export default function AdminPage() {
     setDownloadingAnalytics(true);
     setAnalyticsDownloadError(null);
     try {
-      await api.downloadReport("analytics");
+      await api.downloadReport("analytics", undefined, "pdf", "admin");
     } catch (err: any) {
       setAnalyticsDownloadError(err?.message || "Failed to download analytics report");
     } finally {
@@ -250,7 +277,7 @@ export default function AdminPage() {
     setDownloadingEscalations(true);
     setEscalationDownloadError(null);
     try {
-      await api.downloadReport("escalations");
+      await api.downloadReport("escalations", undefined, "pdf", "admin");
     } catch (err: any) {
       setEscalationDownloadError(err?.message || "Failed to download escalations report");
     } finally {
@@ -267,7 +294,7 @@ export default function AdminPage() {
     setDownloadingSummary(true);
     setSummaryDownloadError(null);
     try {
-      await api.downloadReport("factory-summary", summaryDays);
+      await api.downloadReport("factory-summary", summaryDays, "pdf", "admin");
     } catch (err: any) {
       setSummaryDownloadError(err?.message || "Failed to download factory summary report");
     } finally {
@@ -320,22 +347,28 @@ export default function AdminPage() {
         }
         if (usersData && usersData.length > 0) {
           setReviewers(
-            usersData.map((u) => ({
-              id: u.id,
-              name: u.full_name || u.email,
-              email: u.email,
-              role: u.role || "worker",
-              status: "Active",
-            }))
+            usersData.map((u) => {
+              const uid = u.id || (u as any).user_id;
+              return {
+                id: uid,
+                name: u.full_name || u.email,
+                email: u.email,
+                role: u.role || "worker",
+                status: "Active",
+              };
+            })
           );
           setPromotableWorkers(
             usersData
-              .filter((u) => u.role === "worker")
-              .map((u) => ({
-                id: u.id,
-                name: u.full_name || u.email,
-                email: u.email,
-              }))
+              .filter((u) => (u.role || "worker").toLowerCase() === "worker")
+              .map((u) => {
+                const uid = u.id || (u as any).user_id;
+                return {
+                  id: uid,
+                  name: u.full_name || u.email,
+                  email: u.email,
+                };
+              })
           );
         }
       }
@@ -377,13 +410,14 @@ export default function AdminPage() {
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
+      if (viewDocModalData) { setViewDocModalData(null); return; }
       if (showUploadModal) { setShowUploadModal(false); return; }
       if (showInviteModal) { setShowInviteModal(false); setPromoteError(null); setSelectedWorkerId(""); setTargetPromoteRole("supervisor"); return; }
       if (selectedDoc) { setSelectedDoc(null); setDocActionError(null); return; }
     };
     document.addEventListener("keydown", handleEscape);
     return () => document.removeEventListener("keydown", handleEscape);
-  }, [showUploadModal, showInviteModal, selectedDoc]);
+  }, [viewDocModalData, showUploadModal, showInviteModal, selectedDoc]);
 
   const handlePromoteWorker = async () => {
     if (!selectedWorkerId) return;
@@ -478,15 +512,142 @@ export default function AdminPage() {
   });
 
   return (
-    <div className="min-h-screen bg-[#FAF8F5] text-[#1C2B29] font-sans flex justify-center pb-20">
-      <div className="w-full max-w-md bg-[#FAF8F5] min-h-screen flex flex-col relative shadow-sm border-x border-[#EAE5DC]">
+    <div className="min-h-screen bg-[#FAF8F5] text-[#1C2B29] font-sans flex justify-center pb-20 lg:pb-0">
+      {/* Outer Responsive Wrapper: Mobile (max-w-md) & Desktop (w-full max-w-7xl flex-row) */}
+      <div className="w-full max-w-md lg:max-w-7xl bg-[#FAF8F5] min-h-screen flex flex-col lg:flex-row relative shadow-sm border-x border-[#EAE5DC] lg:border-x-0">
+        {/* ─── DESKTOP LEFT SIDEBAR (hidden on mobile) ──────────────── */}
+        <aside className="hidden lg:flex flex-col w-64 shrink-0 bg-white border-r border-[#EDE8E0] min-h-screen p-5 space-y-6 sticky top-0 h-screen overflow-y-auto z-40">
+          {/* Logo & Brand Header */}
+          <div className="flex items-center gap-3">
+            <img src="/industrymind_logo.png" alt="IndustryMind Logo" className="w-8 h-8 object-contain" />
+            <div>
+              <span className="font-bold text-base tracking-tight text-[#1C2B29] block">
+                IndustryMind
+              </span>
+              <span className="text-[10px] text-[#5C6460] font-medium block">
+                Plant Manager Portal
+              </span>
+            </div>
+          </div>
+
+          {/* Active Admin Card */}
+          <div className="p-3 bg-[#FAF8F5] rounded-2xl border border-[#EDE8E0] space-y-1">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-full bg-[#1C2B29] text-white flex items-center justify-center text-xs font-bold">
+                {(user?.full_name || "A")[0]}
+              </div>
+              <div className="min-w-0 flex-1">
+                <span className="text-xs font-bold text-[#1C2B29] truncate block">
+                  {user?.full_name || "Plant Administrator"}
+                </span>
+                <span className="text-[10px] text-[#5C6460] block capitalize">
+                  Administrator
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Desktop Navigation Links */}
+          <nav className="flex-1 space-y-1">
+            <button
+              type="button"
+              onClick={() => setActiveNav("home")}
+              className={`w-full min-h-[44px] px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition text-left cursor-pointer ${
+                activeNav === "home"
+                  ? "bg-[#1C2B29] text-white shadow-xs"
+                  : "text-[#5C6460] hover:text-[#1C2B29] hover:bg-[#FAF8F5]"
+              }`}
+            >
+              <Home className="w-4 h-4 shrink-0" />
+              <span>Plant Overview</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveNav("branch")}
+              className={`w-full min-h-[44px] px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition text-left cursor-pointer ${
+                activeNav === "branch"
+                  ? "bg-[#1C2B29] text-white shadow-xs"
+                  : "text-[#5C6460] hover:text-[#1C2B29] hover:bg-[#FAF8F5]"
+              }`}
+            >
+              <Building2 className="w-4 h-4 shrink-0" />
+              <span>Factory Units</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveNav("documents")}
+              className={`w-full min-h-[44px] px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition text-left cursor-pointer ${
+                activeNav === "documents"
+                  ? "bg-[#1C2B29] text-white shadow-xs"
+                  : "text-[#5C6460] hover:text-[#1C2B29] hover:bg-[#FAF8F5]"
+              }`}
+            >
+              <FileCheck2 className="w-4 h-4 shrink-0" />
+              <span>Document Repository</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveNav("team")}
+              className={`w-full min-h-[44px] px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition text-left cursor-pointer ${
+                activeNav === "team"
+                  ? "bg-[#1C2B29] text-white shadow-xs"
+                  : "text-[#5C6460] hover:text-[#1C2B29] hover:bg-[#FAF8F5]"
+              }`}
+            >
+              <Users className="w-4 h-4 shrink-0" />
+              <span>Team & Roles</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveNav("reports")}
+              className={`w-full min-h-[44px] px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition text-left cursor-pointer ${
+                activeNav === "reports"
+                  ? "bg-[#1C2B29] text-white shadow-xs"
+                  : "text-[#5C6460] hover:text-[#1C2B29] hover:bg-[#FAF8F5]"
+              }`}
+            >
+              <FileSpreadsheet className="w-4 h-4 shrink-0" />
+              <span>Operations Reports</span>
+            </button>
+          </nav>
+
+          {/* Bottom Sidebar Action Items */}
+          <div className="pt-4 border-t border-[#EDE8E0] space-y-2">
+            <button
+              type="button"
+              onClick={() => setShowProfileModal(true)}
+              className="w-full min-h-[44px] px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-2.5 text-[#5C6460] hover:text-[#1C2B29] hover:bg-[#FAF8F5] transition cursor-pointer"
+            >
+              <Settings className="w-4 h-4" />
+              <span>Manager Settings</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (confirm("Log out of Admin portal?")) {
+                  logout();
+                  router.push("/login");
+                }
+              }}
+              className="w-full min-h-[44px] px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-2.5 text-[#5C6460] hover:text-[#D95A2B] hover:bg-[#FAF8F5] transition cursor-pointer"
+            >
+              <LogOut className="w-4 h-4" />
+              <span>Sign Out</span>
+            </button>
+          </div>
+        </aside>
+
+        {/* ─── MAIN CONTENT VIEWPORT ─────────────────────────────────── */}
+        <div className="flex-1 min-w-0 flex flex-col min-h-screen">
         {/* Top Header Bar */}
         <header className="sticky top-0 z-30 bg-[#FAF8F5]/90 backdrop-blur-md px-4 pt-3 pb-2 border-b border-[#EAE5DC]">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-[#D95A2B] text-white flex items-center justify-center font-bold text-sm shadow-sm">
-                IM
-              </div>
+              <img src="/industrymind_logo.png" alt="IndustryMind Logo" className="w-8 h-8 object-contain" />
               <span className="font-bold text-lg tracking-tight text-[#1C2B29]">
                 IndustryMind
               </span>
@@ -507,14 +668,9 @@ export default function AdminPage() {
 
               <button
                 type="button"
-                onClick={() => {
-                  if (confirm("Log out of Branch Manager portal?")) {
-                    logout();
-                    router.push("/login");
-                  }
-                }}
-                title="Log out"
-                className="w-8 h-8 rounded-full bg-[#1C2B29] text-white flex items-center justify-center text-xs font-semibold hover:bg-red-700 transition"
+                onClick={() => setShowProfileModal(true)}
+                title="Profile & Settings"
+                className="w-8 h-8 rounded-full bg-[#1C2B29] text-white flex items-center justify-center text-xs font-semibold hover:bg-[#D95A2B] transition cursor-pointer"
               >
                 P
               </button>
@@ -894,10 +1050,28 @@ export default function AdminPage() {
               ))}
             </div>
 
+            {/* View Document Error Alert */}
+            {viewDocError && (
+              <div className="bg-[#FDF2F2] border border-[#F8B4B4] text-[#9B1C1C] text-xs p-3 rounded-2xl flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>{viewDocError}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setViewDocError(null)}
+                  className="p-1 rounded-full text-[#9B1C1C] hover:bg-[#FDE8E8] transition"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+
             {/* Documents List */}
             <div className="space-y-3">
               {filteredDocs.map((doc) => {
                 const badge = getDocStatusBadge(doc.status);
+                const isLoadingThisDoc = viewLoadingDocId === doc.id;
                 return (
                   <div
                     key={doc.id}
@@ -907,15 +1081,31 @@ export default function AdminPage() {
                     }}
                     className="bg-white border border-[#EDE8E0] rounded-2xl p-4 shadow-xs cursor-pointer hover:border-[#D95A2B] transition"
                   >
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-xs text-[#1C2B29]">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-bold text-xs text-[#1C2B29] truncate">
                         {doc.title}
                       </span>
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${badge.className}`}
-                      >
-                        {badge.label}
-                      </span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {doc.id && (
+                          <button
+                            type="button"
+                            disabled={isLoadingThisDoc}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleViewDoc(doc.id, doc.title);
+                            }}
+                            className="min-h-[36px] px-3 py-1.5 rounded-xl border border-[#E5E0D8] bg-[#FAF8F5] hover:border-[#D95A2B] text-xs font-semibold text-[#1C2B29] transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                          >
+                            <FileText className="w-3.5 h-3.5 text-[#D95A2B]" />
+                            <span>{isLoadingThisDoc ? "Loading..." : "View PDF"}</span>
+                          </button>
+                        )}
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${badge.className}`}
+                        >
+                          {badge.label}
+                        </span>
+                      </div>
                     </div>
 
                     <div className="flex items-center justify-between mt-3 pt-2 border-t border-[#F0ECE4] text-[11px] text-[#5C6460]">
@@ -942,10 +1132,10 @@ export default function AdminPage() {
                   setShowInviteModal(true);
                   setPromoteError(null);
                 }}
-                className="flex items-center gap-1.5 bg-[#D95A2B] text-white text-xs font-semibold px-3 py-1.5 rounded-xl hover:bg-[#C84E18] transition"
+                className="flex items-center gap-1.5 bg-[#D95A2B] text-white text-xs font-semibold px-3 py-1.5 rounded-xl hover:bg-[#C84E18] transition cursor-pointer"
               >
                 <Plus className="w-4 h-4" />
-                <span>Promote to Reviewer</span>
+                <span>Promote Employee</span>
               </button>
             </div>
 
@@ -981,15 +1171,15 @@ export default function AdminPage() {
                     >
                       {r.status}
                     </span>
-                    {r.role === "expert" && (
+                    {(r.role === "expert" || r.role === "supervisor" || r.role === "reviewer") && (
                       <button
                         type="button"
-                        aria-label="Return to Worker"
+                        aria-label="Demote to worker"
                         disabled={demoteSubmittingId === r.id}
                         onClick={() => handleDemoteExpert(r.id)}
-                        className="min-h-[48px] px-3 py-1.5 rounded-xl border border-[#EDE8E0] bg-[#FAF8F5] text-[#1C2B29] text-xs font-semibold hover:bg-[#E5E0D8] transition disabled:opacity-50"
+                        className="min-h-[48px] px-3 py-1.5 rounded-xl border border-[#EDE8E0] bg-[#FAF8F5] text-[#1C2B29] text-xs font-semibold hover:bg-[#E5E0D8] transition disabled:opacity-50 cursor-pointer"
                       >
-                        {demoteSubmittingId === r.id ? "Updating..." : "Return to Worker"}
+                        {demoteSubmittingId === r.id ? "Updating..." : "Demote to Worker"}
                       </button>
                     )}
                   </div>
@@ -1230,6 +1420,16 @@ export default function AdminPage() {
                   <Download className="w-4 h-4 text-[#5C6460]" />
                 </div>
 
+                <button
+                  type="button"
+                  disabled={viewLoadingDocId === selectedDoc.id}
+                  onClick={() => handleViewDoc(selectedDoc.id, selectedDoc.title)}
+                  className="w-full py-2.5 rounded-xl border border-[#E5E0D8] bg-[#FAF8F5] hover:border-[#D95A2B] text-xs font-bold text-[#1C2B29] transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  <FileText className="w-4 h-4 text-[#D95A2B]" />
+                  <span>{viewLoadingDocId === selectedDoc.id ? "Loading PDF..." : "View PDF Document"}</span>
+                </button>
+
                 {docActionError && (
                   <div className="bg-red-50 border border-red-200 text-red-700 text-xs p-3 rounded-2xl flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
@@ -1276,7 +1476,7 @@ export default function AdminPage() {
           <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4" onClick={(e) => { if (e.target === e.currentTarget) { setShowInviteModal(false); setPromoteError(null); setSelectedWorkerId(""); setTargetPromoteRole("supervisor"); } }}>
             <div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl border border-[#EDE8E0] space-y-4">
               <div className="flex items-center justify-between border-b border-[#EDE8E0] pb-2">
-                <span className="font-bold text-sm text-[#1C2B29]">Promote Worker</span>
+                <span className="font-bold text-sm text-[#1C2B29]">Promote Employee</span>
                 <button
                   type="button"
                   aria-label="Close promote modal"
@@ -1295,21 +1495,21 @@ export default function AdminPage() {
               <div className="space-y-3 text-xs">
                 {promotableWorkers.length === 0 ? (
                   <p className="text-xs text-[#5C6460] py-2 text-center">
-                    No eligible workers to promote
+                    No eligible employees to promote
                   </p>
                 ) : (
                   <>
                     <div>
                       <label className="text-[11px] font-bold text-[#5C6460] block mb-1">
-                        Select Worker
+                        Select Employee
                       </label>
                       <select
-                        aria-label="Select worker to promote"
+                        aria-label="Select employee to promote"
                         value={selectedWorkerId}
                         onChange={(e) => setSelectedWorkerId(e.target.value)}
                         className="w-full min-h-[48px] bg-[#FAF8F5] border border-[#E5E0D8] rounded-xl p-2.5 text-xs text-[#1C2B29] focus:outline-none focus:border-[#D95A2B]"
                       >
-                        <option value="">Select a worker...</option>
+                        <option value="">Select an employee...</option>
                         {promotableWorkers.map((w) => (
                           <option key={w.id} value={w.id}>
                             {w.name} ({w.email})
@@ -1355,12 +1555,12 @@ export default function AdminPage() {
                 {promotableWorkers.length > 0 && (
                   <button
                     type="button"
-                    aria-label="Promote user"
+                    aria-label="Promote employee"
                     disabled={promoteSubmitting || !selectedWorkerId}
                     onClick={handlePromoteWorker}
-                    className="w-full min-h-[48px] py-3 rounded-2xl bg-[#D95A2B] hover:bg-[#C84E18] text-white text-xs font-bold transition shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="w-full min-h-[48px] py-3 rounded-2xl bg-[#D95A2B] hover:bg-[#C84E18] text-white text-xs font-bold transition shadow-xs disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                   >
-                    {promoteSubmitting ? "Promoting..." : "Promote"}
+                    {promoteSubmitting ? "Promoting..." : "Promote Employee"}
                   </button>
                 )}
               </div>
@@ -1492,8 +1692,8 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* ─── BOTTOM DOCK NAVIGATION ───────────────────────────────── */}
-        <nav className="fixed bottom-0 left-0 right-0 z-30 max-w-md mx-auto bg-white/95 backdrop-blur-md border-t border-[#EDE8E0] px-4 py-2 flex items-center justify-between">
+        {/* ─── BOTTOM DOCK NAVIGATION (mobile only) ───────────────── */}
+        <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-30 max-w-md mx-auto bg-white/95 backdrop-blur-md border-t border-[#EDE8E0] px-4 py-2 flex items-center justify-between">
           <button
             type="button"
             onClick={() => setActiveNav("home")}
@@ -1544,6 +1744,23 @@ export default function AdminPage() {
             <span>Reports</span>
           </button>
         </nav>
+        </div>
+
+        {/* Profile & Settings Modal */}
+        <ProfileModal
+          isOpen={showProfileModal}
+          onClose={() => setShowProfileModal(false)}
+        />
+
+        {/* PDF Preview Modal */}
+        {viewDocModalData && (
+          <PdfPreviewModal
+            open={!!viewDocModalData}
+            title={viewDocModalData.title}
+            src={viewDocModalData.src}
+            onClose={() => setViewDocModalData(null)}
+          />
+        )}
       </div>
     </div>
   );

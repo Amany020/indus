@@ -150,6 +150,15 @@ export interface TroubleshootingTurnResponse {
 export const LANGUAGES = [
   { code: "en", label: "English", tag: "en-IN" },
   { code: "hi", label: "हिन्दी", tag: "hi-IN" },
+  { code: "gu", label: "ગુજરાતી", tag: "gu-IN" },
+  { code: "mr", label: "मराठी", tag: "mr-IN" },
+  { code: "ta", label: "தமிழ்", tag: "ta-IN" },
+  { code: "te", label: "తెలుగు", tag: "te-IN" },
+  { code: "bn", label: "বাংলা", tag: "bn-IN" },
+  { code: "kn", label: "ಕನ್ನಡ", tag: "kn-IN" },
+  { code: "ml", label: "മലയാളം", tag: "ml-IN" },
+  { code: "pa", label: "ਪੰਜਾਬੀ", tag: "pa-IN" },
+  { code: "od", label: "ଓଡ଼ିଆ", tag: "od-IN" },
 ] as const;
 
 export type VoiceLanguageCode = (typeof LANGUAGES)[number]["code"];
@@ -884,6 +893,21 @@ export const api = {
   // Health
   health: () => apiFetch<{ status: string; version: string }>("/health"),
 
+  // Sarvam AI Multi-Language Translation
+  translate: (
+    text: string,
+    targetLanguage: string,
+    sourceLanguage: string = "auto"
+  ): Promise<{ translated_text: string; source_language: string; target_language: string; provider: string }> =>
+    apiFetch("/translate", {
+      method: "POST",
+      body: JSON.stringify({
+        text,
+        target_language: targetLanguage,
+        source_language: sourceLanguage,
+      }),
+    }),
+
   // Expert ticket handling
   getMyTickets: () => getMyTickets(),
   getAssignedTickets: () => getAssignedTickets(),
@@ -893,7 +917,12 @@ export const api = {
 
   // Document file & report downloads
   getDocumentFileUrl: (id: string) => getDocumentFileUrl(id),
-  downloadReport: (kind: "escalations" | "analytics" | "factory-summary", days?: number, format?: "pdf" | "csv") => downloadReport(kind, days, format),
+  downloadReport: (
+    kind: "escalations" | "analytics" | "factory-summary",
+    days?: number,
+    format?: "pdf" | "csv",
+    role?: string
+  ) => downloadReport(kind, days, format, role),
   apiDownload: (path: string, fallbackFilename?: string, opts?: FetchOptions) => apiDownload(path, fallbackFilename, opts),
 };
 
@@ -1062,7 +1091,8 @@ export async function getAnalyticsBreakdown(days: number = 30): Promise<Analytic
 export async function downloadReport(
   kind: "escalations" | "analytics" | "factory-summary",
   days?: number,
-  format: "pdf" | "csv" = "pdf"
+  format: "pdf" | "csv" = "pdf",
+  role: string = "reviewer"
 ): Promise<void> {
   const ext = format === "pdf" ? "pdf" : "csv";
   let path: string;
@@ -1070,8 +1100,11 @@ export async function downloadReport(
   else if (kind === "analytics") path = `/reports/analytics.${ext}`;
   else path = `/reports/factory-summary.${ext}${days ? `?days=${days}` : ""}`;
   const fallback = `${kind}.${ext}`;
+
+  const token = getToken();
+
   try {
-    const { blob, filename } = await apiDownload(path, fallback, { role: "reviewer" });
+    const { blob, filename } = await apiDownload(path, fallback, { role });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -1079,8 +1112,22 @@ export async function downloadReport(
     document.body.appendChild(a);
     a.click();
     a.remove();
-    window.URL.revokeObjectURL(url);
+    setTimeout(() => {
+      window.URL.revokeObjectURL(url);
+    }, 1500);
   } catch (err) {
+    if (token) {
+      const sep = path.includes("?") ? "&" : "?";
+      const directUrl = `${BASE_URL}${path}${sep}token=${encodeURIComponent(token)}`;
+      const a = document.createElement("a");
+      a.href = directUrl;
+      a.target = "_blank";
+      a.download = fallback;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      return;
+    }
     throw new Error(parseApiError(err, `Failed to download ${kind} report`));
   }
 }

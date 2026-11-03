@@ -2,7 +2,24 @@
 
 import React, { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AlertCircle, Eye, EyeOff, Building, User, Lock, Check } from "lucide-react";
+import {
+  AlertCircle,
+  Eye,
+  EyeOff,
+  Building,
+  User,
+  Lock,
+  Mail,
+  HardHat,
+  Users,
+  Settings,
+  ArrowRight,
+  Brain,
+  FileText,
+  Camera,
+  BarChart2,
+  Cog,
+} from "lucide-react";
 import { api, Factory, Branch } from "@/lib/api";
 
 function LoginForm() {
@@ -110,17 +127,14 @@ function LoginForm() {
         });
         loginRes = await api.login({ email: email.trim(), password });
       } else {
-        // Genuine Sign In with Supabase Auth
         loginRes = await api.login({ email: email.trim(), password });
       }
 
-      // Store authentic JWT token in cookie and user in localStorage
       api.setToken(loginRes.access_token);
       if (typeof window !== "undefined") {
         localStorage.setItem("indus_user", JSON.stringify(loginRes.user));
       }
 
-      // Route based on genuine role
       const rawRole = (loginRes.user.role || "").toLowerCase();
       if (rawRole === "admin") {
         window.location.href = "/admin";
@@ -136,311 +150,408 @@ function LoginForm() {
     }
   };
 
+  const selectedRole = email.includes("admin")
+    ? "admin"
+    : email.includes("reviewer")
+    ? "reviewer"
+    : "worker";
+
   return (
-    <div className="min-h-screen bg-[#FAF8F5] text-[#1C2B29] font-sans flex justify-center">
-      <div className="w-full max-w-md bg-[#FAF8F5] min-h-screen flex flex-col relative shadow-sm border-x border-[#EAE5DC]">
-        {/* Top Factory Sunset Skyline Header */}
-        <div className="relative h-64 w-full overflow-hidden bg-black">
-          <img
-            src="/factory_banner.jpg"
-            alt="IndustryMind Manufacturing Plant"
-            className="w-full h-full object-cover opacity-85"
-          />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent flex flex-col justify-end p-6 text-center">
-            <div className="w-12 h-12 rounded-2xl bg-[#D95A2B] text-white flex items-center justify-center font-bold text-lg mx-auto shadow-lg mb-2">
-              IM
+    <div className="min-h-screen relative flex items-center justify-center p-4 sm:p-6 lg:p-8 xl:p-12 overflow-hidden font-sans">
+      {/* ─── Background Photograph from User Reference ─── */}
+      <div className="fixed inset-0 z-0">
+        <img
+          src="/industrial_plant_bg.jpg"
+          alt="IndusWorks Industrial Plant"
+          className="w-full h-full object-cover object-center"
+        />
+        {/* Subtle daylight wash allowing clear visibility of the factory photograph */}
+        <div className="absolute inset-0 bg-gradient-to-r from-white/20 via-transparent to-white/10" />
+      </div>
+
+      <div className="relative z-10 w-full max-w-md lg:max-w-6xl lg:grid lg:grid-cols-12 lg:gap-8 xl:gap-10 lg:items-stretch">
+        {/* ─── Desktop Left Hero Section with Glassmorphism ─── */}
+        <div className="hidden lg:flex lg:col-span-6 xl:col-span-6 bg-white/60 backdrop-blur-2xl flex-col justify-between relative shadow-[0_25px_50px_-12px_rgba(28,43,41,0.12)] border border-white/60 rounded-[32px] overflow-hidden p-8 lg:p-10">
+          <div className="space-y-6">
+            <div className="flex items-center gap-3">
+              <img
+                src="/industrymind_logo.png"
+                alt="IndustryMind Logo"
+                className="w-12 h-12 object-contain"
+              />
+              <div>
+                <h1 className="text-2xl font-black tracking-tight text-[#1C2B29]">IndustryMind</h1>
+                <p className="text-xs text-[#5C6460] font-medium">Industrial Knowledge. Real Solutions.</p>
+              </div>
             </div>
-            <h1 className="text-2xl font-black tracking-tight text-white">
-              IndustryMind
-            </h1>
-            <p className="text-xs text-[#EAE5DC] mt-1 font-medium">
-              Industrial Knowledge. Real Solutions.
-            </p>
+
+            <div className="w-10 h-1 rounded-full bg-[#1C2B29]" />
+
+            <div className="space-y-3">
+              <h2 className="text-3xl xl:text-4xl font-black text-[#1C2B29] tracking-tight leading-tight">
+                AI-Powered<br />
+                Industrial Assistant
+              </h2>
+              <p className="text-sm text-[#4A5568] max-w-md leading-relaxed font-medium">
+                Get instant, accurate, and grounded answers from your approved SOPs and manuals.
+              </p>
+            </div>
+
+            <div className="space-y-2.5 max-w-md pt-2">
+              {[
+                { icon: Brain, label: "AI Troubleshooting" },
+                { icon: FileText, label: "Approved SOPs & Manuals" },
+                { icon: Camera, label: "Multimodal Support (Text • Voice • Image)" },
+                { icon: Users, label: "Expert Knowledge Capture" },
+                { icon: BarChart2, label: "Real-Time Analytics" },
+              ].map((f, i) => (
+                <div
+                  key={i}
+                  className="flex items-center gap-3.5 px-4 py-3 rounded-2xl bg-white/60 hover:bg-white/80 backdrop-blur-md border border-white/60 shadow-xs hover:shadow-sm transition"
+                >
+                  <div className="w-6 h-6 flex items-center justify-center text-[#1C2B29] shrink-0">
+                    <f.icon className="w-5 h-5" />
+                  </div>
+                  <span className="text-xs font-bold text-[#1C2B29]">{f.label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="pt-6 flex items-center gap-2 text-[11px] text-[#5C6460] border-t border-white/60 mt-6">
+            <Building className="w-3.5 h-3.5 text-[#1C2B29]" />
+            <span>Connected to verified factory tenancy and knowledge base</span>
           </div>
         </div>
 
-        {/* Login Card Overlay */}
-        <div className="flex-1 -mt-6 bg-[#FAF8F5] rounded-t-3xl px-6 pt-6 pb-8 border-t border-[#EDE8E0] space-y-5">
-          <div className="text-center">
-            <h2 className="text-xl font-bold text-[#1C2B29]">Welcome Back</h2>
-            <p className="text-xs text-[#5C6460] mt-0.5">
-              Sign in to your industrial engineer account
-            </p>
-          </div>
+        {/* ─── Right Auth Card (matching photograph) ─── */}
+        <div className="w-full lg:col-span-6 xl:col-span-6 bg-white/60 backdrop-blur-2xl min-h-screen lg:min-h-0 flex flex-col relative shadow-[0_25px_50px_-12px_rgba(28,43,41,0.12)] border border-white/60 lg:rounded-[32px] overflow-hidden">
+          {/* Top-right corner architectural accent matching photograph */}
+          <div className="hidden lg:block absolute top-0 right-0 w-28 h-28 bg-[#D8CFBF]/30 backdrop-blur-xs rounded-bl-[100px] pointer-events-none" />
 
-          {/* Quick Demo Role Chips */}
-          <div className="space-y-1.5">
-            <span className="text-[10px] font-bold text-[#5C6460] uppercase tracking-wider block text-center">
-              Quick Role Switch (Demo)
-            </span>
-            <div className="grid grid-cols-3 gap-2">
-              <button
-                type="button"
-                onClick={() => handleQuickRole("worker")}
-                className={`py-1.5 px-2 rounded-xl text-[11px] font-semibold border transition ${
-                  email.includes("vikram")
-                    ? "bg-[#D95A2B] text-white border-[#D95A2B]"
-                    : "bg-white border-[#E5E0D8] text-[#5C6460] hover:text-[#1C2B29]"
-                }`}
-              >
-                Worker
-              </button>
-              <button
-                type="button"
-                onClick={() => handleQuickRole("reviewer")}
-                className={`py-1.5 px-2 rounded-xl text-[11px] font-semibold border transition ${
-                  email.includes("rahul")
-                    ? "bg-[#D95A2B] text-white border-[#D95A2B]"
-                    : "bg-white border-[#E5E0D8] text-[#5C6460] hover:text-[#1C2B29]"
-                }`}
-              >
-                Reviewer
-              </button>
-              <button
-                type="button"
-                onClick={() => handleQuickRole("admin")}
-                className={`py-1.5 px-2 rounded-xl text-[11px] font-semibold border transition ${
-                  email.includes("priya")
-                    ? "bg-[#D95A2B] text-white border-[#D95A2B]"
-                    : "bg-white border-[#E5E0D8] text-[#5C6460] hover:text-[#1C2B29]"
-                }`}
-              >
-                Manager
-              </button>
+          {/* Top Factory Skyline Header (Mobile only) */}
+          <div className="relative h-60 w-full overflow-hidden bg-slate-900 lg:hidden">
+            <img
+              src="/industrial_plant_bg.jpg"
+              alt="IndustryMind Manufacturing Plant"
+              className="w-full h-full object-cover"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-white/80 via-white/40 to-transparent flex flex-col justify-end p-6 text-center">
+              <img
+                src="/industrymind_logo.png"
+                alt="IndustryMind Logo"
+                className="w-12 h-12 object-contain mx-auto mb-2 drop-shadow-md"
+              />
+              <h1 className="text-2xl font-black tracking-tight text-[#1C2B29]">
+                IndustryMind
+              </h1>
+              <p className="text-xs text-[#5C6460] mt-1 font-semibold">
+                Industrial Knowledge. Real Solutions.
+              </p>
             </div>
           </div>
 
-          {/* Form Mode Selector */}
-          <div className="flex border-b border-[#E5E0D8] text-xs">
-            <button
-              type="button"
-              onClick={() => setMode("signin")}
-              className={`flex-1 pb-2 font-semibold text-center transition ${
-                mode === "signin"
-                  ? "text-[#D95A2B] border-b-2 border-[#D95A2B]"
-                  : "text-[#5C6460]"
-              }`}
-            >
-              Sign In
-            </button>
-            <button
-              type="button"
-              onClick={() => setMode("register")}
-              className={`flex-1 pb-2 font-semibold text-center transition ${
-                mode === "register"
-                  ? "text-[#D95A2B] border-b-2 border-[#D95A2B]"
-                  : "text-[#5C6460]"
-              }`}
-            >
-              New Factory
-            </button>
-            <button
-              type="button"
-              onClick={() => setMode("join")}
-              className={`flex-1 pb-2 font-semibold text-center transition ${
-                mode === "join"
-                  ? "text-[#D95A2B] border-b-2 border-[#D95A2B]"
-                  : "text-[#5C6460]"
-              }`}
-            >
-              Join Factory
-            </button>
-          </div>
-
-          {submitError && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-xl text-xs flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0" />
-              <span>{submitError}</span>
-            </div>
-          )}
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {mode === "register" && (
-              <div>
-                <label className="text-[11px] font-bold text-[#5C6460] block mb-1">
-                  Factory Name
-                </label>
-                <div className="relative">
-                  <Building className="w-4 h-4 text-[#5C6460] absolute left-3 top-3" />
-                  <input
-                    type="text"
-                    required
-                    value={factoryName}
-                    onChange={(e) => setFactoryName(e.target.value)}
-                    placeholder="e.g. Surat Automotive Components"
-                    className="w-full bg-white border border-[#E5E0D8] rounded-2xl pl-10 pr-3 py-2.5 text-xs text-[#1C2B29] focus:outline-none focus:border-[#D95A2B] transition"
-                  />
-                </div>
-              </div>
-            )}
-
-            {mode === "join" && (
-              <div>
-                <label className="text-[11px] font-bold text-[#5C6460] block mb-1">
-                  Select Factory
-                </label>
-                <div className="relative">
-                  <Building className="w-4 h-4 text-[#5C6460] absolute left-3 top-3 pointer-events-none" />
-                  <select
-                    required
-                    value={selectedFactoryId || ""}
-                    onChange={(e) => setSelectedFactoryId(e.target.value)}
-                    className="w-full bg-white border border-[#E5E0D8] rounded-2xl pl-10 pr-3 py-2.5 text-xs text-[#1C2B29] focus:outline-none focus:border-[#D95A2B] transition"
-                  >
-                    <option value="" disabled>
-                      Select your factory...
-                    </option>
-                    {factories.map((factory) => (
-                      <option key={factory.id} value={factory.id}>
-                        {factory.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                {isLoadingFactories && (
-                  <p className="text-[11px] text-[#5C6460] mt-1">Loading factories...</p>
-                )}
-                {factoriesError && (
-                  <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-xl text-xs flex items-center gap-2 mt-1">
-                    <AlertCircle className="w-4 h-4 shrink-0" />
-                    <span>{factoriesError}</span>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {mode === "join" && selectedFactoryId && (
-              <div>
-                <label className="text-[11px] font-bold text-[#5C6460] block mb-1">
-                  Branch
-                </label>
-                {branches.length > 0 ? (
-                  <div className="relative">
-                    <Building className="w-4 h-4 text-[#5C6460] absolute left-3 top-3 pointer-events-none" />
-                    <select
-                      required
-                      value={selectedBranchId || ""}
-                      onChange={(e) => setSelectedBranchId(e.target.value || null)}
-                      className="w-full bg-white border border-[#E5E0D8] rounded-2xl pl-10 pr-3 py-2.5 text-xs text-[#1C2B29] focus:outline-none focus:border-[#D95A2B] transition"
-                    >
-                      <option value="" disabled>
-                        Select a branch...
-                      </option>
-                      {branches.map((branch) => (
-                        <option key={branch.id} value={branch.id}>
-                          {branch.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                ) : (
-                  <p className="text-[11px] text-[#5C6460] py-1">
-                    No branches found for this factory
-                  </p>
-                )}
-              </div>
-            )}
-
-            {(mode === "register" || mode === "join") && (
-              <div>
-                <label className="text-[11px] font-bold text-[#5C6460] block mb-1">
-                  Full Name
-                </label>
-                <div className="relative">
-                  <User className="w-4 h-4 text-[#5C6460] absolute left-3 top-3" />
-                  <input
-                    type="text"
-                    required
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                    placeholder="e.g. Vikram Singh"
-                    className="w-full bg-white border border-[#E5E0D8] rounded-2xl pl-10 pr-3 py-2.5 text-xs text-[#1C2B29] focus:outline-none focus:border-[#D95A2B] transition"
-                  />
-                </div>
-              </div>
-            )}
-
-            <div>
-              <label className="text-[11px] font-bold text-[#5C6460] block mb-1">
-                Email or Username
-              </label>
-              <div className="relative">
-                <User className="w-4 h-4 text-[#5C6460] absolute left-3 top-3" />
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="name@surat.indus"
-                  className="w-full bg-white border border-[#E5E0D8] rounded-2xl pl-10 pr-3 py-2.5 text-xs text-[#1C2B29] focus:outline-none focus:border-[#D95A2B] transition"
-                />
-              </div>
+          {/* Login Card Body */}
+          <div className="flex-1 -mt-6 lg:mt-0 px-6 sm:px-8 lg:px-10 pt-6 lg:pt-8 pb-8 space-y-5">
+            {/* Desktop Brand Header inside card */}
+            <div className="hidden lg:flex items-center justify-center gap-2.5 mb-2">
+              <img
+                src="/industrymind_logo.png"
+                alt="IndustryMind Logo"
+                className="w-8 h-8 object-contain"
+              />
+              <span className="text-lg font-black text-[#1C2B29]">IndustryMind</span>
             </div>
 
-            <div>
-              <label className="text-[11px] font-bold text-[#5C6460] block mb-1">
-                Password
-              </label>
-              <div className="relative">
-                <Lock className="w-4 h-4 text-[#5C6460] absolute left-3 top-3" />
-                <input
-                  type={showPassword ? "text" : "password"}
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full bg-white border border-[#E5E0D8] rounded-2xl pl-10 pr-10 py-2.5 text-xs text-[#1C2B29] focus:outline-none focus:border-[#D95A2B] transition"
-                />
+            <div className="text-center">
+              <h2 className="text-2xl font-black text-[#1C2B29] tracking-tight">Welcome Back</h2>
+              <p className="text-xs text-[#5C6460] mt-0.5">
+                Sign in to your industrial engineer account
+              </p>
+            </div>
+
+            {/* Quick Role Switch */}
+            <div className="space-y-1.5">
+              <span className="text-[10px] font-bold text-[#5C6460] uppercase tracking-wider block text-center">
+                Quick Role Switch
+              </span>
+              <div className="grid grid-cols-3 gap-2">
                 <button
                   type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-3 text-[#5C6460] hover:text-[#1C2B29]"
+                  onClick={() => handleQuickRole("worker")}
+                  className={`min-h-[44px] py-1.5 px-2 rounded-2xl text-[11px] font-bold border transition flex items-center justify-center gap-1.5 ${
+                    selectedRole === "worker"
+                      ? "bg-[#2D3748] text-white border-[#2D3748] shadow-sm"
+                      : "bg-white/60 backdrop-blur-xs border-white/60 text-[#5C6460] hover:text-[#1C2B29] hover:bg-white/90"
+                  }`}
                 >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  <HardHat className="w-3.5 h-3.5" />
+                  <span>Worker</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleQuickRole("reviewer")}
+                  className={`min-h-[44px] py-1.5 px-2 rounded-xl text-[11px] font-bold border transition flex items-center justify-center gap-1.5 ${
+                    selectedRole === "reviewer"
+                      ? "bg-[#2D3748] text-white border-[#2D3748] shadow-sm"
+                      : "bg-white/60 backdrop-blur-xs border-white/60 text-[#5C6460] hover:text-[#1C2B29] hover:bg-white/90"
+                  }`}
+                >
+                  <Users className="w-3.5 h-3.5" />
+                  <span>Reviewer</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleQuickRole("admin")}
+                  className={`min-h-[44px] py-1.5 px-2 rounded-xl text-[11px] font-bold border transition flex items-center justify-center gap-1.5 ${
+                    selectedRole === "admin"
+                      ? "bg-[#2D3748] text-white border-[#2D3748] shadow-sm"
+                      : "bg-white/60 backdrop-blur-xs border-white/60 text-[#5C6460] hover:text-[#1C2B29] hover:bg-white/90"
+                  }`}
+                >
+                  <Settings className="w-3.5 h-3.5" />
+                  <span>Manager</span>
                 </button>
               </div>
             </div>
 
-            <div className="flex items-center justify-between text-xs">
-              <label className="flex items-center gap-2 cursor-pointer text-[#5C6460]">
-                <input
-                  type="checkbox"
-                  checked={rememberMe}
-                  onChange={(e) => setRememberMe(e.target.checked)}
-                  className="rounded text-[#D95A2B] focus:ring-[#D95A2B]"
-                />
-                <span>Remember me</span>
-              </label>
-
+            {/* Form Mode Selector */}
+            <div className="flex border-b border-white/60 text-xs">
               <button
                 type="button"
-                onClick={() => alert("Please contact your factory system administrator to reset password.")}
-                className="text-[#D95A2B] font-semibold hover:underline"
+                onClick={() => setMode("signin")}
+                className={`flex-1 pb-2 font-bold text-center transition flex items-center justify-center gap-1.5 ${
+                  mode === "signin"
+                    ? "text-[#1C2B29] border-b-2 border-[#1C2B29]"
+                    : "text-[#5C6460] hover:text-[#1C2B29]"
+                }`}
               >
-                Forgot password?
+                <Lock className="w-3.5 h-3.5" />
+                <span>Sign In</span>
               </button>
-            </div>
-
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="w-full py-3.5 rounded-2xl bg-[#D95A2B] hover:bg-[#C84E18] text-white text-xs font-bold transition shadow-md disabled:opacity-50"
-            >
-              {isSubmitting ? "Signing in..." : mode === "signin" ? "Sign In" : "Continue"}
-            </button>
-          </form>
-
-          <div className="text-center pt-2">
-            <span className="text-xs text-[#5C6460]">
-              Don&apos;t have an account?{" "}
               <button
                 type="button"
                 onClick={() => setMode("register")}
-                className="text-[#D95A2B] font-bold hover:underline"
+                className={`flex-1 pb-2 font-bold text-center transition flex items-center justify-center gap-1.5 ${
+                  mode === "register"
+                    ? "text-[#1C2B29] border-b-2 border-[#1C2B29]"
+                    : "text-[#5C6460] hover:text-[#1C2B29]"
+                }`}
               >
-                Contact Reviewer / Admin
+                <Building className="w-3.5 h-3.5" />
+                <span>New Factory</span>
               </button>
-            </span>
+              <button
+                type="button"
+                onClick={() => setMode("join")}
+                className={`flex-1 pb-2 font-bold text-center transition flex items-center justify-center gap-1.5 ${
+                  mode === "join"
+                    ? "text-[#1C2B29] border-b-2 border-[#1C2B29]"
+                    : "text-[#5C6460] hover:text-[#1C2B29]"
+                }`}
+              >
+                <Building className="w-3.5 h-3.5" />
+                <span>Join Factory</span>
+              </button>
+            </div>
+
+            {submitError && (
+              <div className="bg-red-50/90 backdrop-blur-xs border border-red-200 text-red-600 px-3 py-2 rounded-xl text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{submitError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {mode === "register" && (
+                <div>
+                  <label className="text-[11px] font-bold text-[#5C6460] block mb-1">
+                    Factory Name
+                  </label>
+                  <div className="relative">
+                    <Building className="w-4 h-4 text-[#A0AEC0] absolute left-3.5 top-3.5" />
+                    <input
+                      type="text"
+                      required
+                      value={factoryName}
+                      onChange={(e) => setFactoryName(e.target.value)}
+                      placeholder="e.g. Surat Automotive Components"
+                      className="w-full bg-white/70 backdrop-blur-xs border border-white/80 rounded-2xl pl-10 pr-3 py-2.5 text-xs text-[#1C2B29] placeholder:text-[#A0AEC0] focus:outline-none focus:bg-white focus:border-[#2D3748] focus:ring-2 focus:ring-[#2D3748]/10 transition min-h-[48px]"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {mode === "join" && (
+                <div>
+                  <label className="text-[11px] font-bold text-[#5C6460] block mb-1">
+                    Select Factory
+                  </label>
+                  <div className="relative">
+                    <Building className="w-4 h-4 text-[#A0AEC0] absolute left-3.5 top-3.5 pointer-events-none" />
+                    <select
+                      required
+                      value={selectedFactoryId || ""}
+                      onChange={(e) => setSelectedFactoryId(e.target.value)}
+                      className="w-full bg-white/70 backdrop-blur-xs border border-white/80 rounded-2xl pl-10 pr-3 py-2.5 text-xs text-[#1C2B29] focus:outline-none focus:bg-white focus:border-[#2D3748] focus:ring-2 focus:ring-[#2D3748]/10 transition min-h-[48px]"
+                    >
+                      <option value="" disabled>
+                        Select your factory...
+                      </option>
+                      {factories.map((factory) => (
+                        <option key={factory.id} value={factory.id}>
+                          {factory.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  {isLoadingFactories && (
+                    <p className="text-[11px] text-[#5C6460] mt-1">Loading factories from database...</p>
+                  )}
+                  {factoriesError && (
+                    <div className="bg-red-50/90 backdrop-blur-xs border border-red-200 text-red-600 px-3 py-2 rounded-xl text-xs flex items-center gap-2 mt-1">
+                      <AlertCircle className="w-4 h-4 shrink-0" />
+                      <span>{factoriesError}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {mode === "join" && selectedFactoryId && (
+                <div>
+                  <label className="text-[11px] font-bold text-[#5C6460] block mb-1">
+                    Branch
+                  </label>
+                  {branches.length > 0 ? (
+                    <div className="relative">
+                      <Building className="w-4 h-4 text-[#A0AEC0] absolute left-3.5 top-3.5 pointer-events-none" />
+                      <select
+                        required
+                        value={selectedBranchId || ""}
+                        onChange={(e) => setSelectedBranchId(e.target.value || null)}
+                        className="w-full bg-white/70 backdrop-blur-xs border border-white/80 rounded-2xl pl-10 pr-3 py-2.5 text-xs text-[#1C2B29] focus:outline-none focus:bg-white focus:border-[#2D3748] focus:ring-2 focus:ring-[#2D3748]/10 transition min-h-[48px]"
+                      >
+                        <option value="" disabled>
+                          Select a branch...
+                        </option>
+                        {branches.map((branch) => (
+                          <option key={branch.id} value={branch.id}>
+                            {branch.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-[#5C6460] py-1">
+                      No branches found for this factory
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {(mode === "register" || mode === "join") && (
+                <div>
+                  <label className="text-[11px] font-bold text-[#5C6460] block mb-1">
+                    Full Name
+                  </label>
+                  <div className="relative">
+                    <User className="w-4 h-4 text-[#A0AEC0] absolute left-3.5 top-3.5" />
+                    <input
+                      type="text"
+                      required
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                      placeholder="e.g. Vikram Singh"
+                      className="w-full bg-white/70 backdrop-blur-xs border border-white/80 rounded-2xl pl-10 pr-3 py-2.5 text-xs text-[#1C2B29] placeholder:text-[#A0AEC0] focus:outline-none focus:bg-white focus:border-[#2D3748] focus:ring-2 focus:ring-[#2D3748]/10 transition min-h-[48px]"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label className="text-[11px] font-bold text-[#5C6460] block mb-1">
+                  Email or Username
+                </label>
+                <div className="relative">
+                  <Mail className="w-4 h-4 text-[#A0AEC0] absolute left-3.5 top-3.5" />
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="rahul.patel@industrymind.com"
+                    className="w-full bg-white/70 backdrop-blur-xs border border-white/80 rounded-2xl pl-10 pr-3 py-2.5 text-xs text-[#1C2B29] placeholder:text-[#A0AEC0] focus:outline-none focus:bg-white focus:border-[#2D3748] focus:ring-2 focus:ring-[#2D3748]/10 transition min-h-[48px]"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-[#5C6460] block mb-1">
+                  Password
+                </label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-[#A0AEC0] absolute left-3.5 top-3.5" />
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full bg-white/70 backdrop-blur-xs border border-white/80 rounded-2xl pl-10 pr-10 py-2.5 text-xs text-[#1C2B29] placeholder:text-[#A0AEC0] focus:outline-none focus:bg-white focus:border-[#2D3748] focus:ring-2 focus:ring-[#2D3748]/10 transition min-h-[48px]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3.5 top-3.5 text-[#A0AEC0] hover:text-[#1C2B29]"
+                    aria-label="Toggle password visibility"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between text-xs">
+                <label className="flex items-center gap-2 cursor-pointer text-[#5C6460]">
+                  <input
+                    type="checkbox"
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                    className="rounded text-[#2D3748] focus:ring-[#2D3748]"
+                  />
+                  <span>Remember me</span>
+                </label>
+
+                <button
+                  type="button"
+                  onClick={() => alert("Please contact your factory system administrator to reset password.")}
+                  className="text-[#5C6460] hover:text-[#1C2B29] font-medium transition"
+                >
+                  Forgot password?
+                </button>
+              </div>
+
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="w-full min-h-[48px] py-3.5 rounded-2xl bg-[#2D3748] hover:bg-[#1A202C] text-white text-xs font-bold transition shadow-md active:scale-[0.99] disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <span>{isSubmitting ? "Signing in..." : mode === "signin" ? "Sign In" : mode === "register" ? "Create Factory" : "Join Factory"}</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </form>
+
+            <div className="text-center pt-2">
+              <span className="text-xs text-[#5C6460]">
+                Don&apos;t have an account?{" "}
+                <button
+                  type="button"
+                  onClick={() => setMode("register")}
+                  className="text-[#1C2B29] font-bold hover:underline"
+                >
+                  Contact Reviewer / Admin
+                </button>
+              </span>
+            </div>
           </div>
         </div>
       </div>

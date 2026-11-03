@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useApp } from "@/lib/context";
 import CameraCaptureModal from "@/components/CameraCaptureModal";
 import QrScannerModal from "@/components/QrScannerModal";
+import ProfileModal from "@/components/ProfileModal";
 import {
   api,
   isAbortError,
@@ -153,6 +154,38 @@ export default function WorkerPage() {
   const [transcript, setTranscript] = useState("");
   const [transcriptError, setTranscriptError] = useState<string | null>(null);
   const [selectedLanguage, setSelectedLanguage] = useState<VoiceLanguageCode>("en");
+  const [translations, setTranslations] = useState<Record<string, { text: string; lang: string; loading?: boolean }>>({});
+
+  const handleTranslateMessage = async (messageId: string, text: string, targetLang: string) => {
+    if (translations[messageId]?.lang === targetLang) {
+      setTranslations((prev) => {
+        const next = { ...prev };
+        delete next[messageId];
+        return next;
+      });
+      return;
+    }
+
+    setTranslations((prev) => ({
+      ...prev,
+      [messageId]: { text: "", lang: targetLang, loading: true },
+    }));
+
+    try {
+      const res = await api.translate(text, targetLang, "auto");
+      setTranslations((prev) => ({
+        ...prev,
+        [messageId]: { text: res.translated_text, lang: targetLang, loading: false },
+      }));
+    } catch (err: any) {
+      alert("Sarvam AI Translation: " + (err?.message || "Failed to translate message"));
+      setTranslations((prev) => {
+        const next = { ...prev };
+        delete next[messageId];
+        return next;
+      });
+    }
+  };
   const [editedTranscript, setEditedTranscript] = useState("");
   const [showEscalate, setShowEscalate] = useState(false);
   const [showEscalateCameraModal, setShowEscalateCameraModal] = useState(false);
@@ -866,8 +899,7 @@ export default function WorkerPage() {
 
   const handleSpeak = async (messageId: string, text: string, language?: string) => {
     setSpeechError(null);
-    const langToUse: VoiceLanguageCode =
-      language === "hi" || language === "en" ? language : selectedLanguage;
+    const langToUse: VoiceLanguageCode = (language as VoiceLanguageCode) || selectedLanguage;
 
     // If already speaking this message, stop playback
     if (speakingMessageId === messageId) {
@@ -902,7 +934,8 @@ export default function WorkerPage() {
 
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = langToUse === "hi" ? "hi-IN" : "en-US";
+      const matchedLang = LANGUAGES.find((l) => l.code === langToUse);
+      utterance.lang = matchedLang?.tag || "en-IN";
 
       const voices = window.speechSynthesis.getVoices();
       const match = voices.find((v) =>
@@ -1269,16 +1302,182 @@ export default function WorkerPage() {
   const recentThree = [...historyItems].reverse().slice(0, 3);
 
   return (
-    <div className="min-h-screen bg-[#FAF8F5] text-[#1C2B29] font-sans flex justify-center pb-20">
-      {/* Mobile-centric Device Container matching reference images */}
-      <div className="w-full max-w-md bg-[#FAF8F5] min-h-screen flex flex-col relative shadow-sm border-x border-[#EAE5DC]">
+    <div className="min-h-screen bg-[#FAF8F5] text-[#1C2B29] font-sans flex justify-center pb-20 lg:pb-0">
+      {/* Outer Responsive Wrapper: Mobile (max-w-md) & Desktop (w-full max-w-7xl flex-row) */}
+      <div className="w-full max-w-md lg:max-w-7xl bg-[#FAF8F5] min-h-screen flex flex-col lg:flex-row relative shadow-sm border-x border-[#EAE5DC] lg:border-x-0">
+        {/* ─── DESKTOP LEFT SIDEBAR (hidden on mobile) ──────────────── */}
+        <aside className="hidden lg:flex flex-col w-64 shrink-0 bg-white border-r border-[#EDE8E0] min-h-screen p-5 space-y-6 sticky top-0 h-screen overflow-y-auto z-40">
+          {/* Logo & Brand Header */}
+          <div className="flex items-center gap-3">
+            <img src="/industrymind_logo.png" alt="IndustryMind Logo" className="w-8 h-8 object-contain" />
+            <div>
+              <span className="font-bold text-base tracking-tight text-[#1C2B29] block">
+                IndustryMind
+              </span>
+              <span className="text-[10px] text-[#5C6460] font-medium block">
+                Operator Workspace
+              </span>
+            </div>
+          </div>
+
+          {/* Active Operator Card */}
+          <div className="p-3 bg-[#FAF8F5] rounded-2xl border border-[#EDE8E0] space-y-1">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-full bg-[#1C2B29] text-white flex items-center justify-center text-xs font-bold">
+                {(user?.full_name || "V")[0]}
+              </div>
+              <div className="min-w-0 flex-1">
+                <span className="text-xs font-bold text-[#1C2B29] truncate block">
+                  {user?.full_name || "Vikram Singh"}
+                </span>
+                <span className="text-[10px] text-[#5C6460] block capitalize">
+                  {userRole}
+                </span>
+              </div>
+            </div>
+            {machine && (
+              <div className="mt-2 pt-2 border-t border-[#E5E0D8] flex items-center gap-1.5 text-[10px] text-[#1C2B29] font-medium">
+                <Cpu className="w-3.5 h-3.5 text-[#D95A2B] shrink-0" />
+                <span className="truncate">{machine.name}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Desktop Navigation Links */}
+          <nav className="flex-1 space-y-1">
+            <button
+              type="button"
+              onClick={() => setActiveTab("home")}
+              className={`w-full min-h-[44px] px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition text-left cursor-pointer ${
+                activeTab === "home"
+                  ? "bg-[#1C2B29] text-white shadow-xs"
+                  : "text-[#5C6460] hover:text-[#1C2B29] hover:bg-[#FAF8F5]"
+              }`}
+            >
+              <Home className="w-4 h-4 shrink-0" />
+              <span>Dashboard</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab("chat")}
+              className={`w-full min-h-[44px] px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition text-left cursor-pointer ${
+                activeTab === "chat"
+                  ? "bg-[#1C2B29] text-white shadow-xs"
+                  : "text-[#5C6460] hover:text-[#1C2B29] hover:bg-[#FAF8F5]"
+              }`}
+            >
+              <MessageSquare className="w-4 h-4 shrink-0" />
+              <span>AI Assistant</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowTroubleshoot(true)}
+              className="w-full min-h-[44px] px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition text-left cursor-pointer text-[#5C6460] hover:text-[#1C2B29] hover:bg-[#FAF8F5]"
+            >
+              <Wrench className="w-4 h-4 shrink-0" />
+              <span>Guided Troubleshoot</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab("machines")}
+              className={`w-full min-h-[44px] px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition text-left cursor-pointer ${
+                activeTab === "machines"
+                  ? "bg-[#1C2B29] text-white shadow-xs"
+                  : "text-[#5C6460] hover:text-[#1C2B29] hover:bg-[#FAF8F5]"
+              }`}
+            >
+              <Cpu className="w-4 h-4 shrink-0" />
+              <span>Machine Fleet</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab("history")}
+              className={`w-full min-h-[44px] px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition text-left cursor-pointer ${
+                activeTab === "history"
+                  ? "bg-[#1C2B29] text-white shadow-xs"
+                  : "text-[#5C6460] hover:text-[#1C2B29] hover:bg-[#FAF8F5]"
+              }`}
+            >
+              <Clock className="w-4 h-4 shrink-0" />
+              <span>My History</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedMyTicketId(null);
+                setActiveTab("my_tickets");
+              }}
+              className={`w-full min-h-[44px] px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition text-left cursor-pointer ${
+                activeTab === "my_tickets"
+                  ? "bg-[#1C2B29] text-white shadow-xs"
+                  : "text-[#5C6460] hover:text-[#1C2B29] hover:bg-[#FAF8F5]"
+              }`}
+            >
+              <FileText className="w-4 h-4 shrink-0" />
+              <span>My Tickets</span>
+            </button>
+
+            {isExpertRole(userRole) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedAssignedTicketId(null);
+                  setActiveTab("assigned_tickets");
+                }}
+                className={`w-full min-h-[44px] px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition text-left cursor-pointer ${
+                  activeTab === "assigned_tickets"
+                    ? "bg-[#1C2B29] text-white shadow-xs"
+                    : "text-[#5C6460] hover:text-[#1C2B29] hover:bg-[#FAF8F5]"
+                }`}
+              >
+                <Wrench className="w-4 h-4 shrink-0" />
+                <span>Assigned Tickets</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={handleOpenTips}
+              className="w-full min-h-[44px] px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition text-left cursor-pointer text-[#5C6460] hover:text-[#1C2B29] hover:bg-[#FAF8F5]"
+            >
+              <Lightbulb className="w-4 h-4 shrink-0" />
+              <span>Field Knowledge</span>
+            </button>
+          </nav>
+
+          {/* Bottom Sidebar Action Items */}
+          <div className="pt-4 border-t border-[#EDE8E0] space-y-2">
+            <button
+              type="button"
+              onClick={() => setShowQrModal(true)}
+              className="w-full min-h-[44px] px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-2.5 text-[#1C2B29] bg-[#FAF8F5] hover:bg-[#EDE8E0] border border-[#E5E0D8] transition"
+            >
+              <QrCode className="w-4 h-4 text-[#D95A2B]" />
+              <span>Scan Equipment QR</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowProfileModal(true)}
+              className="w-full min-h-[44px] px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-2.5 text-[#5C6460] hover:text-[#1C2B29] transition"
+            >
+              <User className="w-4 h-4" />
+              <span>Operator Settings</span>
+            </button>
+          </div>
+        </aside>
+
+        {/* ─── MAIN CONTENT VIEWPORT ─────────────────────────────────── */}
+        <div className="flex-1 min-w-0 flex flex-col min-h-screen">
         {/* Top Header Bar */}
         <header className="sticky top-0 z-30 bg-[#FAF8F5]/90 backdrop-blur-md px-4 pt-3 pb-2 border-b border-[#EAE5DC]">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-[#D95A2B] text-white flex items-center justify-center font-bold text-sm shadow-sm">
-                IM
-              </div>
+              <img src="/industrymind_logo.png" alt="IndustryMind Logo" className="w-8 h-8 object-contain" />
               <span className="font-bold text-lg tracking-tight text-[#1C2B29]">
                 IndustryMind
               </span>
@@ -1571,9 +1770,9 @@ export default function WorkerPage() {
                       Suggested questions from approved manuals:
                     </span>
                     {[
-                      "What is the routine lubrication schedule for CDU-7500X?",
-                      "How to adjust belt tension on Conveyor Drive Unit?",
-                      "What actions are required for error code E-247 motor overheat?",
+                      `What is the routine maintenance schedule for ${machine?.name || "this machine"}?`,
+                      `How to perform safety pre-checks and inspection for ${machine?.name || "this machine"}?`,
+                      `What are the emergency stop and lockout procedures?`,
                     ].map((q, i) => (
                       <button
                         key={i}
@@ -1650,8 +1849,14 @@ export default function WorkerPage() {
                         )}
 
                         <p className="text-xs text-[#1C2B29] leading-relaxed">
-                          {m.text}
+                          {translations[m.id]?.text || m.text}
                         </p>
+                        {translations[m.id]?.text && (
+                          <div className="text-[10px] text-[#D95A2B] font-semibold flex items-center gap-1 mt-1">
+                            <Languages className="w-3 h-3" />
+                            <span>Translated via Sarvam AI ({LANGUAGES.find(l => l.code === translations[m.id].lang)?.label || translations[m.id].lang})</span>
+                          </div>
+                        )}
 
                         {/* Steps checklist if present */}
                         {m.steps && m.steps.length > 0 && (
@@ -1725,7 +1930,27 @@ export default function WorkerPage() {
                           <div className="flex items-center gap-2">
                             <button
                               type="button"
-                              onClick={() => handleSpeak(m.id, m.text, selectedLanguage)}
+                              onClick={() => handleTranslateMessage(m.id, m.text, selectedLanguage)}
+                              disabled={translations[m.id]?.loading}
+                              title={`Translate with Sarvam AI (${LANGUAGES.find(l => l.code === selectedLanguage)?.label || selectedLanguage})`}
+                              className={`min-h-[32px] px-2 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition border ${
+                                translations[m.id]?.text
+                                  ? "bg-[#D95A2B]/10 text-[#D95A2B] border-[#D95A2B]/30"
+                                  : "border-[#E5E0D8] text-[#5C6460] hover:text-[#1C2B29] hover:bg-[#FAF8F5]"
+                              }`}
+                            >
+                              <Languages className="w-3.5 h-3.5" />
+                              <span>
+                                {translations[m.id]?.loading
+                                  ? "Translating..."
+                                  : translations[m.id]?.text
+                                  ? "Original"
+                                  : `Translate (${selectedLanguage.toUpperCase()})`}
+                              </span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleSpeak(m.id, translations[m.id]?.text || m.text, translations[m.id]?.lang || selectedLanguage)}
                               className={`p-1.5 rounded-lg border text-xs flex items-center gap-1 transition ${
                                 speakingMessageId === m.id
                                   ? "bg-[#FDF2ED] border-[#D95A2B] text-[#D95A2B]"
@@ -2152,8 +2377,8 @@ export default function WorkerPage() {
           </main>
         )}
 
-        {/* ─── FIXED BOTTOM DOCK NAVIGATION ─────────────────────────── */}
-        <nav className="fixed bottom-0 left-0 right-0 z-30 max-w-md mx-auto bg-white/95 backdrop-blur-md border-t border-[#EDE8E0] px-1 sm:px-3 py-2 flex items-center justify-around">
+        {/* ─── FIXED BOTTOM DOCK NAVIGATION (mobile only) ─────────── */}
+        <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-30 max-w-md mx-auto bg-white/95 backdrop-blur-md border-t border-[#EDE8E0] px-1 sm:px-3 py-2 flex items-center justify-around">
           <button
             type="button"
             onClick={() => setActiveTab("home")}
@@ -2228,6 +2453,7 @@ export default function WorkerPage() {
             </button>
           )}
         </nav>
+        </div>
 
         {/* ─── MODAL 1: VOICE QUERY ─────────────────────────────────── */}
         {showVoiceModal && (
@@ -2668,171 +2894,11 @@ export default function WorkerPage() {
           </div>
         )}
 
-        {/* ─── MODAL 4: USER PROFILE ───────────────────────────────── */}
-        {showProfileModal && (
-          <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4" onClick={(e) => { if (e.target === e.currentTarget) { setShowProfileModal(false); setShowPasswordSection(false); setPasswordChangeError(null); setPasswordChangeSuccess(false); setCurrentPassword(""); setNewPassword(""); setConfirmPassword(""); } }}>
-            <div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl border border-[#EDE8E0] space-y-4">
-              <div className="flex items-center justify-between border-b border-[#EDE8E0] pb-2">
-                <div className="flex items-center gap-2">
-                  <User className="w-5 h-5 text-[#D95A2B]" />
-                  <span className="font-bold text-sm text-[#1C2B29]">
-                    Profile
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowProfileModal(false);
-                    setShowPasswordSection(false);
-                    setPasswordChangeError(null);
-                    setPasswordChangeSuccess(false);
-                    setCurrentPassword("");
-                    setNewPassword("");
-                    setConfirmPassword("");
-                  }}
-                  className="p-1 rounded-full text-[#5C6460] hover:bg-[#FAF8F5]"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              {profileLoading && (
-                <div className="py-6 text-center text-xs text-[#5C6460] flex items-center justify-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-[#D95A2B] animate-ping" />
-                  <span>Loading profile...</span>
-                </div>
-              )}
-
-              {profileError && (
-                <div className="bg-red-50 border border-red-200 text-red-700 text-xs p-2.5 rounded-xl">
-                  {profileError}
-                </div>
-              )}
-
-              {profileData && !profileLoading && (
-                <div className="bg-[#FAF8F5] border border-[#E5E0D8] rounded-2xl p-4 space-y-3 text-xs">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-bold text-[#5C6460]">Full Name</span>
-                    <span className="font-semibold text-[#1C2B29]">{profileData.full_name}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-bold text-[#5C6460]">Email</span>
-                    <span className="font-semibold text-[#1C2B29]">{profileData.email}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-bold text-[#5C6460]">Role</span>
-                    <span className="font-semibold text-[#1C2B29] capitalize">{profileData.role}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-bold text-[#5C6460]">Factory</span>
-                    <span className="font-semibold text-[#1C2B29]">{profileData.factory_name}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-bold text-[#5C6460]">Branch</span>
-                    <span className="font-semibold text-[#1C2B29]">{profileData.branch_name}</span>
-                  </div>
-                </div>
-              )}
-
-              {/* Collapsible Change Password Section */}
-              <div className="space-y-3">
-                <button
-                  type="button"
-                  onClick={() => setShowPasswordSection(!showPasswordSection)}
-                  className="w-full bg-[#FAF8F5] border border-[#EDE8E0] rounded-2xl p-3 flex items-center justify-between text-xs font-bold text-[#1C2B29] hover:border-[#D95A2B] transition cursor-pointer"
-                >
-                  <span>Change Password</span>
-                  <ChevronRight
-                    className={`w-4 h-4 text-[#5C6460] transition-transform ${
-                      showPasswordSection ? "rotate-90" : ""
-                    }`}
-                  />
-                </button>
-
-                {showPasswordSection && (
-                  <div className="space-y-3 pt-1">
-                    <div>
-                      <label className="text-[11px] font-bold text-[#5C6460] block mb-1">
-                        Current Password
-                      </label>
-                      <input
-                        type="password"
-                        value={currentPassword}
-                        onChange={(e) => setCurrentPassword(e.target.value)}
-                        placeholder="••••••••"
-                        className="w-full bg-[#FAF8F5] border border-[#E5E0D8] rounded-xl px-3 py-2 text-xs text-[#1C2B29] focus:outline-none focus:border-[#D95A2B]"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="text-[11px] font-bold text-[#5C6460] block mb-1">
-                        New Password
-                      </label>
-                      <input
-                        type="password"
-                        value={newPassword}
-                        onChange={(e) => setNewPassword(e.target.value)}
-                        placeholder="••••••••"
-                        className="w-full bg-[#FAF8F5] border border-[#E5E0D8] rounded-xl px-3 py-2 text-xs text-[#1C2B29] focus:outline-none focus:border-[#D95A2B]"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="text-[11px] font-bold text-[#5C6460] block mb-1">
-                        Confirm New Password
-                      </label>
-                      <input
-                        type="password"
-                        value={confirmPassword}
-                        onChange={(e) => setConfirmPassword(e.target.value)}
-                        placeholder="••••••••"
-                        className="w-full bg-[#FAF8F5] border border-[#E5E0D8] rounded-xl px-3 py-2 text-xs text-[#1C2B29] focus:outline-none focus:border-[#D95A2B]"
-                      />
-                    </div>
-
-                    {passwordChangeError && (
-                      <div className="bg-red-50 border border-red-200 text-red-700 text-xs p-2.5 rounded-xl">
-                        {passwordChangeError}
-                      </div>
-                    )}
-
-                    {passwordChangeSuccess && (
-                      <div className="bg-green-50 border border-green-200 text-green-700 text-xs p-2.5 rounded-xl flex items-center gap-2">
-                        <CheckCircle2 className="w-4 h-4 shrink-0 text-green-600" />
-                        <span>Password updated successfully</span>
-                      </div>
-                    )}
-
-                    <button
-                      type="button"
-                      disabled={passwordChangeLoading}
-                      onClick={handleChangePassword}
-                      className="w-full py-2.5 rounded-xl bg-[#D95A2B] hover:bg-[#C84E18] disabled:opacity-50 text-white text-xs font-bold transition shadow-xs"
-                    >
-                      {passwordChangeLoading ? "Updating..." : "Update Password"}
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              <div className="pt-2 border-t border-[#EDE8E0]">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (confirm("Log out of IndustryMind?")) {
-                      logout();
-                      router.push("/login");
-                    }
-                  }}
-                  title="Log out"
-                  className="w-full py-2.5 rounded-xl bg-[#1C2B29] text-white text-xs font-semibold hover:bg-red-700 transition flex items-center justify-center gap-2"
-                >
-                  Log Out
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        {/* ─── MODAL 4: USER PROFILE & SETTINGS ─────────────────────── */}
+        <ProfileModal
+          isOpen={showProfileModal}
+          onClose={() => setShowProfileModal(false)}
+        />
 
         {/* ─── MODAL 5: GUIDED TROUBLESHOOTING ──────────────────────── */}
         {showTroubleshoot && (
