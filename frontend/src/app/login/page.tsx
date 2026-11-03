@@ -157,7 +157,7 @@ function LoginForm() {
     : "worker";
 
   return (
-    <div className="min-h-screen relative flex items-center justify-center p-4 sm:p-6 lg:p-8 xl:p-12 overflow-hidden font-sans">
+    <div className="min-h-screen relative flex items-center justify-center p-4 sm:p-6 lg:p-8 xl:p-12 overflow-y-auto font-sans py-8 lg:py-8">
       {/* ─── Background Photograph from User Reference ─── */}
       <div className="fixed inset-0 z-0">
         <img
@@ -169,9 +169,9 @@ function LoginForm() {
         <div className="absolute inset-0 bg-gradient-to-r from-white/20 via-transparent to-white/10" />
       </div>
 
-      <div className="relative z-10 w-full max-w-md lg:max-w-6xl lg:grid lg:grid-cols-12 lg:gap-8 xl:gap-10 lg:items-stretch">
-        {/* ─── Desktop Left Hero Section with Glassmorphism ─── */}
-        <div className="hidden lg:flex lg:col-span-6 xl:col-span-6 bg-white/60 backdrop-blur-2xl flex-col justify-between relative shadow-[0_25px_50px_-12px_rgba(28,43,41,0.12)] border border-white/60 rounded-[32px] overflow-hidden p-8 lg:p-10">
+      <div className="relative z-10 w-full max-w-md md:max-w-4xl lg:max-w-6xl md:grid md:grid-cols-2 lg:grid-cols-12 gap-6 lg:gap-8 xl:gap-10 items-stretch">
+        {/* ─── Left Hero Section with Glassmorphism (matching Right Card) ─── */}
+        <div className="hidden md:flex md:col-span-1 lg:col-span-6 bg-white/80 backdrop-blur-2xl flex-col justify-between relative shadow-[0_25px_50px_-12px_rgba(28,43,41,0.12)] border border-white/60 rounded-[32px] sm:rounded-[36px] overflow-hidden p-8 lg:p-10 h-full">
           <div className="space-y-6">
             <div className="flex items-center gap-3">
               <img
@@ -207,7 +207,7 @@ function LoginForm() {
               ].map((f, i) => (
                 <div
                   key={i}
-                  className="flex items-center gap-3.5 px-4 py-3 rounded-2xl bg-white/60 hover:bg-white/80 backdrop-blur-md border border-white/60 shadow-xs hover:shadow-sm transition"
+                  className="flex items-center gap-3.5 px-4 py-3 rounded-2xl bg-white/70 hover:bg-white/90 backdrop-blur-md border border-white/70 shadow-xs hover:shadow-sm transition"
                 >
                   <div className="w-6 h-6 flex items-center justify-center text-[#1C2B29] shrink-0">
                     <f.icon className="w-5 h-5" />
@@ -224,37 +224,34 @@ function LoginForm() {
           </div>
         </div>
 
-        {/* ─── Right Auth Card (matching photograph) ─── */}
-        <div className="w-full lg:col-span-6 xl:col-span-6 bg-white/60 backdrop-blur-2xl min-h-screen lg:min-h-0 flex flex-col relative shadow-[0_25px_50px_-12px_rgba(28,43,41,0.12)] border border-white/60 lg:rounded-[32px] overflow-hidden">
-          {/* Top-right corner architectural accent matching photograph */}
-          <div className="hidden lg:block absolute top-0 right-0 w-28 h-28 bg-[#D8CFBF]/30 backdrop-blur-xs rounded-bl-[100px] pointer-events-none" />
-
-          {/* Top Factory Skyline Header (Mobile only) */}
-          <div className="relative h-60 w-full overflow-hidden bg-slate-900 lg:hidden">
+        {/* ─── Right Auth Card with Identical Glassmorphism & Height ─── */}
+        <div className="w-full md:col-span-1 lg:col-span-6 bg-white/80 backdrop-blur-2xl flex flex-col justify-between relative shadow-[0_25px_50px_-12px_rgba(28,43,41,0.12)] border border-white/60 rounded-[32px] sm:rounded-[36px] overflow-hidden h-full">
+          {/* Top Factory Skyline Header (Mobile only < md) */}
+          <div className="relative h-60 w-full overflow-hidden md:hidden">
             <img
               src="/industrial_plant_bg.jpg"
               alt="IndustryMind Manufacturing Plant"
               className="w-full h-full object-cover"
             />
-            <div className="absolute inset-0 bg-gradient-to-t from-white/80 via-white/40 to-transparent flex flex-col justify-end p-6 text-center">
+            <div className="absolute inset-0 bg-gradient-to-t from-white via-white/40 to-transparent flex flex-col items-center justify-center p-6 text-center">
               <img
                 src="/industrymind_logo.png"
                 alt="IndustryMind Logo"
-                className="w-12 h-12 object-contain mx-auto mb-2 drop-shadow-md"
+                className="w-14 h-14 object-contain mx-auto mb-1.5 drop-shadow-sm"
               />
               <h1 className="text-2xl font-black tracking-tight text-[#1C2B29]">
                 IndustryMind
               </h1>
-              <p className="text-xs text-[#5C6460] mt-1 font-semibold">
+              <p className="text-xs text-[#5C6460] font-semibold">
                 Industrial Knowledge. Real Solutions.
               </p>
             </div>
           </div>
 
-          {/* Login Card Body */}
-          <div className="flex-1 -mt-6 lg:mt-0 px-6 sm:px-8 lg:px-10 pt-6 lg:pt-8 pb-8 space-y-5">
+          {/* Login Card Body with matching desktop padding */}
+          <div className="flex-1 px-6 sm:px-8 lg:px-10 pt-6 md:pt-10 pb-8 space-y-5 flex flex-col justify-between">
             {/* Desktop Brand Header inside card */}
-            <div className="hidden lg:flex items-center justify-center gap-2.5 mb-2">
+            <div className="hidden md:flex items-center justify-center gap-2.5 mb-2">
               <img
                 src="/industrymind_logo.png"
                 alt="IndustryMind Logo"

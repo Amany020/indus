@@ -112,6 +112,9 @@ export interface QueryResponse {
   evidence_pack: EvidenceMeta[];
   expert_knowledge: ExpertTip[];
   detected_language: string;
+  answer_language?: string;
+  answer_en?: string | null;
+  translation_failed?: boolean;
   latency_ms: number;
   demo_cached: boolean;
 }
@@ -716,10 +719,30 @@ export const api = {
   },
 
   textToSpeech: (text: string, language: string = "en") =>
-    apiFetch<{ provider: string; text: string; language: string; audio_url: string | null; message?: string; error?: string }>("/voice/tts", {
+    apiFetch<{
+      provider: string;
+      text: string;
+      language: string;
+      audio_url: string | null;
+      truncated?: boolean;
+      message?: string;
+      error?: string;
+    }>("/voice/tts", {
       method: "POST",
       body: JSON.stringify({ text, language }),
     }),
+
+  getVoiceLanguages: () =>
+    apiFetch<Array<{
+      code: string;
+      name: string;
+      sarvam_code: string;
+      browser_code: string;
+      tag: string;
+      tts: boolean;
+      stt: boolean;
+      translate: boolean;
+    }>>("/voice/languages"),
 
   // Documents
   getDocuments: (machineId?: string) =>

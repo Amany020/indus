@@ -134,8 +134,22 @@ export default function WorkerPage() {
     feedback?: "up" | "down" | null;
     resolution?: "resolved" | "not_resolved" | "still_working" | null;
     language?: string;
+    answer_en?: string | null;
+    translation_failed?: boolean;
     expert_tips?: ExpertTip[];
   }>>([]);
+  const [showEnglishOriginal, setShowEnglishOriginal] = useState<Record<string, boolean>>({});
+  const [ttsTruncatedNotice, setTtsTruncatedNotice] = useState<Record<string, boolean>>({});
+  const [voiceLanguages, setVoiceLanguages] = useState<Array<{
+    code: string;
+    name: string;
+    sarvam_code: string;
+    browser_code: string;
+    tag?: string;
+  }>>([
+    { code: "en", name: "English", sarvam_code: "en-IN", browser_code: "en-IN", tag: "en-IN" },
+    { code: "hi", name: "हिन्दी", sarvam_code: "hi-IN", browser_code: "hi-IN", tag: "hi-IN" },
+  ]);
   const [chatInput, setChatInput] = useState("");
   const [pendingImageBlob, setPendingImageBlob] = useState<Blob | null>(null);
   const [pendingImagePreviewUrl, setPendingImagePreviewUrl] = useState<string | null>(null);
@@ -426,10 +440,30 @@ export default function WorkerPage() {
   useEffect(() => {
     try {
       const saved = localStorage.getItem("im_voice_lang");
-      if (saved === "en" || saved === "hi") {
-        setSelectedLanguage(saved);
+      if (saved) {
+        setSelectedLanguage(saved as VoiceLanguageCode);
       }
     } catch (_) {}
+
+    let mounted = true;
+    api.getVoiceLanguages()
+      .then((langs) => {
+        if (mounted && Array.isArray(langs) && langs.length > 0) {
+          setVoiceLanguages(langs);
+        }
+      })
+      .catch((_) => {
+        if (mounted) {
+          setVoiceLanguages([
+            { code: "en", name: "English", sarvam_code: "en-IN", browser_code: "en-IN", tag: "en-IN" },
+            { code: "hi", name: "हिन्दी", sarvam_code: "hi-IN", browser_code: "hi-IN", tag: "hi-IN" },
+          ]);
+        }
+      });
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const handleLanguageSelect = (lang: VoiceLanguageCode) => {
@@ -551,7 +585,9 @@ export default function WorkerPage() {
                 }
               : undefined,
             feedback: null,
-            language: response.detected_language,
+            language: response.answer_language || response.detected_language,
+            answer_en: response.answer_en || null,
+            translation_failed: response.translation_failed || false,
             expert_tips: response.expert_knowledge,
           },
         ]);
@@ -647,7 +683,9 @@ export default function WorkerPage() {
               }
             : undefined,
           feedback: null,
-          language: response.detected_language,
+          language: response.answer_language || response.detected_language,
+          answer_en: response.answer_en || null,
+          translation_failed: response.translation_failed || false,
           expert_tips: response.expert_knowledge,
         },
       ]);
@@ -899,7 +937,7 @@ export default function WorkerPage() {
 
   const handleSpeak = async (messageId: string, text: string, language?: string) => {
     setSpeechError(null);
-    const langToUse: VoiceLanguageCode = (language as VoiceLanguageCode) || selectedLanguage;
+    const langToUse = (language || "en").toLowerCase();
 
     // If already speaking this message, stop playback
     if (speakingMessageId === messageId) {
@@ -927,15 +965,15 @@ export default function WorkerPage() {
 
     const fallbackToBrowserSpeech = () => {
       if (typeof window === "undefined" || !("speechSynthesis" in window)) {
-        setSpeechError("Voice output is not supported in this browser.");
+        setSpeechError("Voice for this language is not available on this device. Text is shown.");
         setSpeakingMessageId(null);
         return;
       }
 
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
-      const matchedLang = LANGUAGES.find((l) => l.code === langToUse);
-      utterance.lang = matchedLang?.tag || "en-IN";
+      const matchedLang = voiceLanguages.find((l) => l.code === langToUse || l.sarvam_code === langToUse);
+      utterance.lang = matchedLang?.browser_code || matchedLang?.tag || (langToUse === "hi" ? "hi-IN" : "en-IN");
 
       const voices = window.speechSynthesis.getVoices();
       const match = voices.find((v) =>
@@ -943,11 +981,7 @@ export default function WorkerPage() {
       );
 
       if (voices.length > 0 && !match) {
-        setSpeechError(
-          langToUse === "hi"
-            ? "No Hindi voice installed on this device."
-            : "No English voice installed on this device."
-        );
+        setSpeechError("Voice for this language is not available on this device. Text is shown.");
         setSpeakingMessageId(null);
         return;
       }
@@ -960,6 +994,7 @@ export default function WorkerPage() {
         setSpeakingMessageId(null);
       };
       utterance.onerror = () => {
+        setSpeechError("Voice for this language is not available on this device. Text is shown.");
         setSpeakingMessageId(null);
       };
       window.speechSynthesis.speak(utterance);
@@ -968,6 +1003,10 @@ export default function WorkerPage() {
 
     try {
       const res = await api.textToSpeech(text, langToUse);
+
+      if (res.truncated) {
+        setTtsTruncatedNotice((prev) => ({ ...prev, [messageId]: true }));
+      }
 
       if (res.audio_url) {
         const audio = new Audio(res.audio_url);
@@ -987,7 +1026,6 @@ export default function WorkerPage() {
         fallbackToBrowserSpeech();
       }
     } catch (err) {
-      console.error("TTS playback failed, attempting browser fallback:", err);
       fallbackToBrowserSpeech();
     }
   };
@@ -1848,15 +1886,43 @@ export default function WorkerPage() {
                           </div>
                         )}
 
-                        <p className="text-xs text-[#1C2B29] leading-relaxed">
-                          {translations[m.id]?.text || m.text}
-                        </p>
-                        {translations[m.id]?.text && (
-                          <div className="text-[10px] text-[#D95A2B] font-semibold flex items-center gap-1 mt-1">
-                            <Languages className="w-3 h-3" />
-                            <span>Translated via Sarvam AI ({LANGUAGES.find(l => l.code === translations[m.id].lang)?.label || translations[m.id].lang})</span>
-                          </div>
-                        )}
+                        {(() => {
+                          const isShowingEn = Boolean(showEnglishOriginal[m.id]);
+                          const displayedAns = (isShowingEn && m.answer_en) ? m.answer_en : (translations[m.id]?.text || m.text);
+                          return (
+                            <div className="space-y-1.5">
+                              <p className="text-xs text-[#1C2B29] leading-relaxed">
+                                {displayedAns}
+                              </p>
+
+                              {m.translation_failed && (
+                                <p className="text-xs text-[#5C6460] font-medium">
+                                  Translation unavailable. Showing English.
+                                </p>
+                              )}
+
+                              {ttsTruncatedNotice[m.id] && (
+                                <p className="text-xs text-[#5C6460] font-medium">
+                                  Audio plays the first part of the answer
+                                </p>
+                              )}
+
+                              {m.answer_en && (
+                                <div className="pt-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => setShowEnglishOriginal((prev) => ({ ...prev, [m.id]: !prev[m.id] }))}
+                                    aria-label={isShowingEn ? "Show translated answer" : "Show English original"}
+                                    className="min-h-[48px] px-3 py-2 rounded-xl border border-[#E5E0D8] bg-[#FAF8F5] text-[#1C2B29] hover:border-[#D95A2B] flex items-center gap-2 text-xs font-semibold transition"
+                                  >
+                                    <Languages className="w-4 h-4 text-[#5C6460]" />
+                                    <span>{isShowingEn ? "Show translated answer" : "Show English original"}</span>
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
 
                         {/* Steps checklist if present */}
                         {m.steps && m.steps.length > 0 && (
@@ -1950,19 +2016,25 @@ export default function WorkerPage() {
                             </button>
                             <button
                               type="button"
-                              onClick={() => handleSpeak(m.id, translations[m.id]?.text || m.text, translations[m.id]?.lang || selectedLanguage)}
-                              className={`p-1.5 rounded-lg border text-xs flex items-center gap-1 transition ${
+                              onClick={() => {
+                                const isShowingEn = Boolean(showEnglishOriginal[m.id]);
+                                const displayedAns = (isShowingEn && m.answer_en) ? m.answer_en : (translations[m.id]?.text || m.text);
+                                const displayedLangCode = (isShowingEn || m.translation_failed) ? "en" : (m.language || selectedLanguage);
+                                handleSpeak(m.id, displayedAns, displayedLangCode);
+                              }}
+                              className={`min-h-[48px] px-3 py-2 rounded-xl border text-xs flex items-center gap-1.5 font-semibold transition ${
                                 speakingMessageId === m.id
-                                  ? "bg-[#FDF2ED] border-[#D95A2B] text-[#D95A2B]"
-                                  : "border-[#E5E0D8] text-[#5C6460] hover:text-[#1C2B29]"
+                                  ? "bg-[#FAF8F5] border-[#D95A2B] text-[#D95A2B]"
+                                  : "border-[#E5E0D8] bg-[#FAF8F5] text-[#5C6460] hover:text-[#1C2B29]"
                               }`}
                               aria-label={speakingMessageId === m.id ? "Stop speaking" : "Listen to this answer"}
                             >
                               {speakingMessageId === m.id ? (
-                                <VolumeX className="w-3.5 h-3.5" />
+                                <VolumeX className="w-4 h-4 text-[#D95A2B]" />
                               ) : (
-                                <Volume2 className="w-3.5 h-3.5" />
+                                <Volume2 className="w-4 h-4 text-[#5C6460]" />
                               )}
+                              <span>{speakingMessageId === m.id ? "Stop" : "Listen"}</span>
                             </button>
                             <button
                               type="button"
@@ -2136,12 +2208,17 @@ export default function WorkerPage() {
 
                 <button
                   type="button"
-                  onClick={() => handleLanguageSelect(selectedLanguage === "en" ? "hi" : "en")}
-                  aria-label={`Current voice language: ${selectedLanguage === "en" ? "English" : "Hindi"}. Click to toggle.`}
-                  className="min-h-[48px] px-2 sm:px-2.5 rounded-xl border border-[#E5E0D8] bg-[#FAF8F5] hover:bg-white text-[#1C2B29] flex items-center gap-1 text-xs font-semibold transition shrink-0"
+                  onClick={() => {
+                    const curIdx = voiceLanguages.findIndex((l) => l.code === selectedLanguage);
+                    const nextIdx = (curIdx + 1) % (voiceLanguages.length || 1);
+                    const nextLang = voiceLanguages[nextIdx]?.code || "en";
+                    handleLanguageSelect(nextLang as VoiceLanguageCode);
+                  }}
+                  aria-label={`Current voice language: ${voiceLanguages.find((l) => l.code === selectedLanguage)?.name || selectedLanguage}. Click to toggle.`}
+                  className="min-h-[48px] px-3 rounded-xl border border-[#E5E0D8] bg-[#FAF8F5] hover:border-[#D95A2B] text-[#1C2B29] flex items-center gap-1.5 text-xs font-semibold transition shrink-0"
                 >
                   <Languages className="w-4 h-4 text-[#5C6460]" />
-                  <span>{selectedLanguage === "en" ? "EN" : "हिन्दी"}</span>
+                  <span>{voiceLanguages.find((l) => l.code === selectedLanguage)?.name || selectedLanguage.toUpperCase()}</span>
                 </button>
 
                 <button
@@ -2473,25 +2550,25 @@ export default function WorkerPage() {
               </div>
 
               {/* Language Selector in Voice Modal */}
-              <div className="flex items-center justify-center gap-2 pt-1 pb-1">
+              <div className="flex flex-wrap items-center justify-center gap-2 pt-1 pb-1">
                 <span className="text-xs font-semibold text-[#5C6460]">Language:</span>
-                <div className="inline-flex rounded-xl p-1 bg-[#FAF8F5] border border-[#E5E0D8]">
-                  {LANGUAGES.map((lang) => {
+                <div className="flex flex-wrap rounded-xl p-1 bg-[#FAF8F5] border border-[#E5E0D8] gap-1">
+                  {voiceLanguages.map((lang) => {
                     const isSelected = selectedLanguage === lang.code;
                     return (
                       <button
                         key={lang.code}
                         type="button"
-                        onClick={() => handleLanguageSelect(lang.code)}
-                        aria-label={`Select ${lang.label} language for voice`}
-                        className={`min-h-[48px] px-3.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${
+                        onClick={() => handleLanguageSelect(lang.code as VoiceLanguageCode)}
+                        aria-label={`Select ${lang.name} language for voice`}
+                        className={`min-h-[48px] px-3.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition ${
                           isSelected
-                            ? "bg-[#D95A2B] text-white shadow-xs"
+                            ? "bg-[#D95A2B] text-[#FAF8F5]"
                             : "text-[#5C6460] hover:text-[#1C2B29]"
                         }`}
                       >
                         <Languages className="w-3.5 h-3.5" />
-                        <span>{lang.label}</span>
+                        <span>{lang.name}</span>
                       </button>
                     );
                   })}
